@@ -34,3 +34,13 @@ jobs:
         run: npm --prefix site ci
       - name: check
         run: npm --prefix site run check
+      # `check` rebuilds the site into docs/, which GitHub Pages serves. Any
+      # difference from what is committed means docs/ was not rebuilt after a
+      # change to site/.
+      - name: docs in sync
+        run: |
+          if [ -n "$(git status --porcelain -- docs)" ]; then
+            echo "::error::docs/ is out of date with site/. Run 'npm --prefix site run build' and commit docs/."
+            git status --short -- docs
+            exit 1
+          fi
