@@ -53,7 +53,7 @@ pub mod intent;
 pub mod ledger;
 pub mod policy;
 
-pub use admission::{Admission, RateLimit, Rejected};
+pub use admission::{Admission, InvalidRateLimit, RateLimit, Rejected};
 pub use gate::{Gate, GateDecision};
 pub use intent::Intent;
 pub use ledger::{Ledger, Record};
