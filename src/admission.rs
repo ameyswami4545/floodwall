@@ -64,7 +64,18 @@ impl Bucket {
             false
         }
     }
+
+    /// Whether the bucket will have refilled to `burst` by `now`. A full
+    /// bucket behaves exactly like a fresh one, so it can be forgotten
+    /// without changing any future decision.
+    fn is_full_at(&self, limit: RateLimit, now: u64) -> bool {
+        let elapsed = now.saturating_sub(self.last) as f64;
+        self.tokens + elapsed * limit.refill_per_tick >= limit.burst
+    }
 }
+
+/// The smallest bucket-map size that triggers an automatic prune.
+const MIN_PRUNE_AT: usize = 1024;
 
 /// Why an intent could not be queued.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,11 +125,18 @@ pub struct Admission {
     seq: u64,
     limit: RateLimit,
     buckets: HashMap<AgentId, Bucket>,
+    /// Bucket-map size at which the next new agent triggers a prune.
+    prune_at: usize,
 }
 
 impl Admission {
     /// A controller holding at most `capacity` waiting intents, with `limit`
     /// applied to each agent independently.
+    ///
+    /// Per-agent state is bounded: once the number of tracked agents
+    /// passes a threshold (at least 1024, doubling with the live set),
+    /// agents whose buckets have refilled are forgotten. This never changes
+    /// a decision, because a full bucket is identical to a new one.
     pub fn new(capacity: usize, limit: RateLimit) -> Self {
         Self {
             queue: BinaryHeap::new(),
@@ -126,7 +144,26 @@ impl Admission {
             seq: 0,
             limit,
             buckets: HashMap::new(),
+            prune_at: MIN_PRUNE_AT,
         }
+    }
+
+    /// Forget every agent whose bucket has refilled by logical time `now`,
+    /// returning how many were dropped. Called automatically as the agent
+    /// set grows; call it directly to reclaim memory sooner.
+    ///
+    /// With `refill_per_tick == 0` a spent bucket never refills, so it is
+    /// never dropped: forgetting it would hand the agent a fresh burst.
+    pub fn prune_idle(&mut self, now: u64) -> usize {
+        let limit = self.limit;
+        let before = self.buckets.len();
+        self.buckets.retain(|_, b| !b.is_full_at(limit, now));
+        before - self.buckets.len()
+    }
+
+    /// How many agents currently have rate-limit state.
+    pub fn tracked_agents(&self) -> usize {
+        self.buckets.len()
     }
 
     /// Try to admit an intent into the queue at logical time `now`.
@@ -136,6 +173,12 @@ impl Admission {
     pub fn submit(&mut self, intent: Intent, now: u64) -> Result<(), Rejected> {
         if self.queue.len() >= self.capacity {
             return Err(Rejected::Backpressure);
+        }
+        if self.buckets.len() >= self.prune_at && !self.buckets.contains_key(&intent.agent) {
+            self.prune_idle(now);
+            // Doubling keeps pruning amortized O(1) per new agent even when
+            // most agents are still active and nothing could be dropped.
+            self.prune_at = (self.buckets.len() * 2).max(MIN_PRUNE_AT);
         }
         let limit = self.limit;
         let bucket = self
@@ -207,6 +250,58 @@ mod tests {
         assert_eq!(
             a.submit(intent_for("bot", 5, Priority::Normal), 1),
             Err(Rejected::RateLimited)
+        );
+    }
+
+    #[test]
+    fn prune_drops_only_refilled_buckets() {
+        // burst 2, refill 1/tick.
+        let mut a = Admission::new(1_000, RateLimit::new(2.0, 1.0));
+        a.submit(intent_for("idle", 0, Priority::Normal), 0)
+            .unwrap();
+        a.submit(intent_for("busy", 0, Priority::Normal), 0)
+            .unwrap();
+        a.submit(intent_for("busy", 1, Priority::Normal), 0)
+            .unwrap();
+        assert_eq!(a.tracked_agents(), 2);
+        // At tick 1, "idle" (1 token + 1 refill) is full again; "busy"
+        // (0 tokens + 1 refill) is not.
+        assert_eq!(a.prune_idle(1), 1);
+        assert_eq!(a.tracked_agents(), 1);
+        // "busy" kept its debt: one token now, then rate-limited.
+        assert_eq!(a.submit(intent_for("busy", 2, Priority::Normal), 1), Ok(()));
+        assert_eq!(
+            a.submit(intent_for("busy", 3, Priority::Normal), 1),
+            Err(Rejected::RateLimited)
+        );
+    }
+
+    #[test]
+    fn prune_never_forgives_a_bucket_that_cannot_refill() {
+        let mut a = Admission::new(1_000, RateLimit::new(1.0, 0.0));
+        a.submit(intent_for("x", 0, Priority::Normal), 0).unwrap();
+        assert_eq!(a.prune_idle(1_000_000), 0);
+        assert_eq!(
+            a.submit(intent_for("x", 1, Priority::Normal), 1_000_000),
+            Err(Rejected::RateLimited)
+        );
+    }
+
+    #[test]
+    fn agent_churn_does_not_grow_state_without_bound() {
+        // Every tick a brand-new agent submits once, then never returns.
+        // Each bucket refills one tick later, so pruning can always reclaim
+        // the old ones.
+        let mut a = Admission::new(usize::MAX, RateLimit::new(1.0, 1.0));
+        for t in 0..10_000u64 {
+            a.submit(intent_for(&format!("agent-{t}"), t, Priority::Bulk), t)
+                .unwrap();
+            a.dequeue();
+        }
+        assert!(
+            a.tracked_agents() <= 2 * MIN_PRUNE_AT,
+            "tracked {} agents",
+            a.tracked_agents()
         );
     }
 

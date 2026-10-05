@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `Admission` no longer keeps a rate-limit bucket for every agent id it
+  has ever seen. Once the tracked set passes a threshold, agents whose
+  buckets have refilled are forgotten; a full bucket is identical to a
+  new one, so no decision changes. `Admission::prune_idle` and
+  `Admission::tracked_agents` expose this directly. (FW-104)
+
 ## [0.1.0] - 2026-06-28
 
 ### Added
