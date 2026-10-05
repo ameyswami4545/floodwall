@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `ledger::Evidence`: each `Record` now carries the action summary, the
+  verdict's reason, and every policy's verdict, all covered by the
+  digest. `Ledger::append_with` records it; `Floodwall::tick` fills it in.
+  (FW-105)
+- `Display` for `Action` (`apply web`, `scale web to 5`, `destroy web`)
+  and `Verdict::reason()`.
+
+### Changed
+
+- Ledger digests length-prefix every text field, so field boundaries are
+  unambiguous. Head digests differ from 0.1.0 for the same history.
+
 ## [0.1.0] - 2026-06-28
 
 ### Added
