@@ -14,6 +14,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::fmt;
 
 use crate::intent::{AgentId, Intent, Priority};
 
@@ -29,13 +30,68 @@ pub struct RateLimit {
 impl RateLimit {
     /// A limit allowing up to `burst` queued at once, refilling
     /// `refill_per_tick` tokens each tick.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the limit is invalid; see [`RateLimit::try_new`].
     pub fn new(burst: f64, refill_per_tick: f64) -> Self {
-        Self {
+        match Self::try_new(burst, refill_per_tick) {
+            Ok(limit) => limit,
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    /// A limit allowing up to `burst` queued at once, refilling
+    /// `refill_per_tick` tokens each tick, or an error if it could never
+    /// admit anything sensibly: `burst` must be finite and at least `1.0`
+    /// (a bucket that cannot hold a whole token rate-limits every intent),
+    /// and `refill_per_tick` must be finite and non-negative.
+    pub fn try_new(burst: f64, refill_per_tick: f64) -> Result<Self, InvalidRateLimit> {
+        let limit = Self {
             burst,
             refill_per_tick,
+        };
+        limit.validate()?;
+        Ok(limit)
+    }
+
+    /// Check the limit's parameters. The fields are public, so a limit built
+    /// by hand is checked again when it is handed to [`Admission::new`].
+    pub fn validate(&self) -> Result<(), InvalidRateLimit> {
+        if !self.burst.is_finite() || self.burst < 1.0 {
+            return Err(InvalidRateLimit::Burst(self.burst));
+        }
+        if !self.refill_per_tick.is_finite() || self.refill_per_tick < 0.0 {
+            return Err(InvalidRateLimit::Refill(self.refill_per_tick));
+        }
+        Ok(())
+    }
+}
+
+/// Why a [`RateLimit`] was refused.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum InvalidRateLimit {
+    /// `burst` was below `1.0`, NaN, or infinite.
+    Burst(f64),
+    /// `refill_per_tick` was negative, NaN, or infinite.
+    Refill(f64),
+}
+
+impl fmt::Display for InvalidRateLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidRateLimit::Burst(b) => {
+                write!(f, "rate limit burst must be finite and >= 1.0, got {b}")
+            }
+            InvalidRateLimit::Refill(r) => write!(
+                f,
+                "rate limit refill_per_tick must be finite and >= 0.0, got {r}"
+            ),
         }
     }
 }
+
+impl std::error::Error for InvalidRateLimit {}
 
 #[derive(Debug)]
 struct Bucket {
@@ -119,7 +175,15 @@ pub struct Admission {
 impl Admission {
     /// A controller holding at most `capacity` waiting intents, with `limit`
     /// applied to each agent independently.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` is invalid (see [`RateLimit::try_new`]), which can
+    /// happen when it was built by setting its public fields directly.
     pub fn new(capacity: usize, limit: RateLimit) -> Self {
+        if let Err(e) = limit.validate() {
+            panic!("{e}");
+        }
         Self {
             queue: BinaryHeap::new(),
             capacity,
@@ -208,6 +272,34 @@ mod tests {
             a.submit(intent_for("bot", 5, Priority::Normal), 1),
             Err(Rejected::RateLimited)
         );
+    }
+
+    #[test]
+    fn rate_limit_rejects_parameters_that_never_admit() {
+        // A bucket that cannot hold a whole token would rate-limit forever.
+        assert_eq!(
+            RateLimit::try_new(0.5, 1.0).unwrap_err(),
+            InvalidRateLimit::Burst(0.5)
+        );
+        assert!(RateLimit::try_new(f64::NAN, 1.0).is_err());
+        assert!(RateLimit::try_new(f64::INFINITY, 1.0).is_err());
+        assert_eq!(
+            RateLimit::try_new(4.0, -1.0).unwrap_err(),
+            InvalidRateLimit::Refill(-1.0)
+        );
+        assert!(RateLimit::try_new(4.0, f64::NAN).is_err());
+        // Boundary values are fine: one token, no refill.
+        assert!(RateLimit::try_new(1.0, 0.0).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "burst must be finite and >= 1.0")]
+    fn admission_rejects_a_hand_built_invalid_limit() {
+        let limit = RateLimit {
+            burst: 0.0,
+            refill_per_tick: 1.0,
+        };
+        let _ = Admission::new(8, limit);
     }
 
     #[test]
