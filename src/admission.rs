@@ -9,11 +9,21 @@
 //!   first, FIFO within a priority) and applies **backpressure** once the
 //!   queue is full.
 //!
+//! # Time
+//!
 //! Time is a logical tick supplied by the caller, so behaviour is fully
 //! deterministic and testable - there is no wall clock anywhere in here.
+//!
+//! An [`Admission`] keeps one clock: the latest tick any call has supplied.
+//! Every method that takes a `now` first treats a tick earlier than that
+//! clock as the clock itself, before changing any state, so time as the
+//! controller sees it never moves backwards. That is what makes forgetting
+//! a refilled bucket safe: no later call can ask about a moment when it
+//! was not yet full.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::fmt;
 
 use crate::intent::{AgentId, Intent, Priority};
 
@@ -29,13 +39,68 @@ pub struct RateLimit {
 impl RateLimit {
     /// A limit allowing up to `burst` queued at once, refilling
     /// `refill_per_tick` tokens each tick.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the limit is invalid; see [`RateLimit::try_new`].
     pub fn new(burst: f64, refill_per_tick: f64) -> Self {
-        Self {
+        match Self::try_new(burst, refill_per_tick) {
+            Ok(limit) => limit,
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    /// A limit allowing up to `burst` queued at once, refilling
+    /// `refill_per_tick` tokens each tick, or an error if it could never
+    /// admit anything sensibly: `burst` must be finite and at least `1.0`
+    /// (a bucket that cannot hold a whole token rate-limits every intent),
+    /// and `refill_per_tick` must be finite and non-negative.
+    pub fn try_new(burst: f64, refill_per_tick: f64) -> Result<Self, InvalidRateLimit> {
+        let limit = Self {
             burst,
             refill_per_tick,
+        };
+        limit.validate()?;
+        Ok(limit)
+    }
+
+    /// Check the limit's parameters. The fields are public, so a limit built
+    /// by hand is checked again when it is handed to [`Admission::new`].
+    pub fn validate(&self) -> Result<(), InvalidRateLimit> {
+        if !self.burst.is_finite() || self.burst < 1.0 {
+            return Err(InvalidRateLimit::Burst(self.burst));
+        }
+        if !self.refill_per_tick.is_finite() || self.refill_per_tick < 0.0 {
+            return Err(InvalidRateLimit::Refill(self.refill_per_tick));
+        }
+        Ok(())
+    }
+}
+
+/// Why a [`RateLimit`] was refused.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum InvalidRateLimit {
+    /// `burst` was below `1.0`, NaN, or infinite.
+    Burst(f64),
+    /// `refill_per_tick` was negative, NaN, or infinite.
+    Refill(f64),
+}
+
+impl fmt::Display for InvalidRateLimit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidRateLimit::Burst(b) => {
+                write!(f, "rate limit burst must be finite and >= 1.0, got {b}")
+            }
+            InvalidRateLimit::Refill(r) => write!(
+                f,
+                "rate limit refill_per_tick must be finite and >= 0.0, got {r}"
+            ),
         }
     }
 }
+
+impl std::error::Error for InvalidRateLimit {}
 
 #[derive(Debug)]
 struct Bucket {
@@ -127,6 +192,8 @@ pub struct Admission {
     buckets: HashMap<AgentId, Bucket>,
     /// Bucket-map size at which the next new agent triggers a prune.
     prune_at: usize,
+    /// The latest tick any call has supplied; see [Time](self#time).
+    clock: u64,
 }
 
 impl Admission {
@@ -136,8 +203,17 @@ impl Admission {
     /// Per-agent state is bounded: once the number of tracked agents
     /// passes a threshold (at least 1024, doubling with the live set),
     /// agents whose buckets have refilled are forgotten. This never changes
-    /// a decision, because a full bucket is identical to a new one.
+    /// a decision, because a full bucket is identical to a new one and time
+    /// never moves backwards (see [Time](self#time)).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` is invalid (see [`RateLimit::try_new`]), which can
+    /// happen when it was built by setting its public fields directly.
     pub fn new(capacity: usize, limit: RateLimit) -> Self {
+        if let Err(e) = limit.validate() {
+            panic!("{e}");
+        }
         Self {
             queue: BinaryHeap::new(),
             capacity,
@@ -145,16 +221,36 @@ impl Admission {
             limit,
             buckets: HashMap::new(),
             prune_at: MIN_PRUNE_AT,
+            clock: 0,
         }
+    }
+
+    /// Advance the clock to `now` and return the effective time: `now`, or
+    /// the clock if `now` is earlier. Every time-taking method calls this
+    /// before touching any other state.
+    fn advance(&mut self, now: u64) -> u64 {
+        self.clock = self.clock.max(now);
+        self.clock
+    }
+
+    /// The latest tick any call has supplied. A `now` earlier than this is
+    /// treated as this.
+    pub fn clock(&self) -> u64 {
+        self.clock
     }
 
     /// Forget every agent whose bucket has refilled by logical time `now`,
     /// returning how many were dropped. Called automatically as the agent
     /// set grows; call it directly to reclaim memory sooner.
     ///
+    /// `now` advances the clock like [`Admission::submit`] does, so pass the
+    /// current tick, not a future one: ticks earlier than it are treated as
+    /// it from then on.
+    ///
     /// With `refill_per_tick == 0` a spent bucket never refills, so it is
     /// never dropped: forgetting it would hand the agent a fresh burst.
     pub fn prune_idle(&mut self, now: u64) -> usize {
+        let now = self.advance(now);
         let limit = self.limit;
         let before = self.buckets.len();
         self.buckets.retain(|_, b| !b.is_full_at(limit, now));
@@ -166,11 +262,13 @@ impl Admission {
         self.buckets.len()
     }
 
-    /// Try to admit an intent into the queue at logical time `now`.
+    /// Try to admit an intent into the queue at logical time `now`. A `now`
+    /// earlier than [`Admission::clock`] is treated as the clock.
     ///
     /// Backpressure is checked before the rate limit, so a full queue does
     /// not burn the agent's tokens.
     pub fn submit(&mut self, intent: Intent, now: u64) -> Result<(), Rejected> {
+        let now = self.advance(now);
         if self.queue.len() >= self.capacity {
             return Err(Rejected::Backpressure);
         }
@@ -303,6 +401,166 @@ mod tests {
             "tracked {} agents",
             a.tracked_agents()
         );
+    }
+
+    #[test]
+    fn pruning_then_an_earlier_tick_matches_an_unpruned_controller() {
+        // Review repro on PR #7: x spends its only token at tick 0, the
+        // bucket is pruned at tick 1, then x submits stamped tick 0. The
+        // pruned controller must answer exactly like one that never pruned.
+        use Step::*;
+        let script = [
+            Submit("x", 0),
+            Dequeue,
+            Prune(1),
+            Submit("x", 0),
+            Submit("x", 0),
+        ];
+        assert_pruning_changes_nothing(RateLimit::new(1.0, 1.0), 0, &script);
+
+        // And the pruning really happened in that scenario.
+        let mut a = Admission::new(10, RateLimit::new(1.0, 1.0));
+        a.submit(intent_for("x", 0, Priority::Normal), 0).unwrap();
+        a.dequeue();
+        assert_eq!(a.prune_idle(1), 1);
+        assert_eq!(a.clock(), 1);
+    }
+
+    #[test]
+    fn earlier_ticks_are_treated_as_the_clock() {
+        let mut a = Admission::new(10, RateLimit::new(1.0, 1.0));
+        a.submit(intent_for("x", 0, Priority::Normal), 5).unwrap();
+        assert_eq!(
+            a.submit(intent_for("x", 1, Priority::Normal), 3),
+            Err(Rejected::RateLimited),
+            "tick 3 is tick 5: no refill yet"
+        );
+        assert_eq!(a.clock(), 5);
+        assert_eq!(a.submit(intent_for("x", 2, Priority::Normal), 6), Ok(()));
+    }
+
+    /// One scripted call against a controller, for twin comparisons.
+    enum Step {
+        Submit(&'static str, u64),
+        Prune(u64),
+        Dequeue,
+    }
+
+    /// Run `script` on a controller that prunes (automatically, plus every
+    /// `Prune` step) and on a twin that never prunes, and assert that every
+    /// submit gets the same answer from both.
+    fn assert_pruning_changes_nothing(limit: RateLimit, noise_agents: usize, script: &[Step]) {
+        let mut pruned = Admission::new(usize::MAX, limit);
+        let mut twin = Admission::new(usize::MAX, limit);
+        twin.prune_at = usize::MAX; // never prunes automatically
+                                    // Fill both past the automatic-prune threshold with agents that
+                                    // spend their burst at tick 0.
+        let noise: Vec<String> = (0..noise_agents).map(|i| format!("noise-{i}")).collect();
+        for name in &noise {
+            for a in [&mut pruned, &mut twin] {
+                while a.submit(intent_for(name, 0, Priority::Bulk), 0).is_ok() {}
+            }
+        }
+        for (i, step) in script.iter().enumerate() {
+            match *step {
+                Step::Submit(agent, now) => {
+                    let got = pruned.submit(intent_for(agent, i as u64, Priority::Normal), now);
+                    let want = twin.submit(intent_for(agent, i as u64, Priority::Normal), now);
+                    assert_eq!(got, want, "step {i}: submit {agent} at tick {now}");
+                }
+                Step::Prune(now) => {
+                    pruned.prune_idle(now);
+                    // The twin only sees the time, like any other call would.
+                    twin.advance(now);
+                }
+                Step::Dequeue => {
+                    pruned.dequeue();
+                    twin.dequeue();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn manual_pruning_never_changes_a_decision_even_when_time_goes_backwards() {
+        use Step::*;
+        let script = [
+            Submit("x", 0),
+            Submit("x", 0),
+            Prune(1),
+            Submit("x", 0),
+            Submit("x", 0),
+            Submit("y", 4),
+            Submit("y", 4),
+            Prune(10),
+            Submit("y", 2),
+            Submit("y", 2),
+            Submit("y", 2),
+            Dequeue,
+            Submit("x", 9),
+        ];
+        assert_pruning_changes_nothing(RateLimit::new(2.0, 1.0), 0, &script);
+        assert_pruning_changes_nothing(RateLimit::new(1.0, 0.5), 0, &script);
+    }
+
+    #[test]
+    fn automatic_pruning_never_changes_a_decision_even_when_time_goes_backwards() {
+        use Step::*;
+        // The noise agents push the bucket map past the threshold; a new
+        // agent at tick 3 then triggers an automatic prune of all of them.
+        let script = [
+            Submit("trigger", 3),
+            Submit("noise-0", 0),
+            Submit("noise-0", 0),
+            Submit("noise-0", 1),
+            Submit("noise-1", 2),
+            Submit("trigger", 0),
+            Submit("noise-2", 7),
+            Submit("noise-2", 4),
+        ];
+        assert_pruning_changes_nothing(RateLimit::new(2.0, 1.0), MIN_PRUNE_AT, &script);
+    }
+
+    #[test]
+    fn automatic_pruning_runs_in_the_twin_test() {
+        // Guard for the test above: the noise really does trigger a prune.
+        let mut a = Admission::new(usize::MAX, RateLimit::new(2.0, 1.0));
+        for i in 0..MIN_PRUNE_AT {
+            let name = format!("noise-{i}");
+            while a.submit(intent_for(&name, 0, Priority::Bulk), 0).is_ok() {}
+        }
+        assert_eq!(a.tracked_agents(), MIN_PRUNE_AT);
+        a.submit(intent_for("trigger", 0, Priority::Normal), 3)
+            .unwrap();
+        assert_eq!(a.tracked_agents(), 1, "only the trigger is left");
+    }
+
+    #[test]
+    fn rate_limit_rejects_parameters_that_never_admit() {
+        // A bucket that cannot hold a whole token would rate-limit forever.
+        assert_eq!(
+            RateLimit::try_new(0.5, 1.0).unwrap_err(),
+            InvalidRateLimit::Burst(0.5)
+        );
+        assert!(RateLimit::try_new(f64::NAN, 1.0).is_err());
+        assert!(RateLimit::try_new(f64::INFINITY, 1.0).is_err());
+        assert_eq!(
+            RateLimit::try_new(4.0, -1.0).unwrap_err(),
+            InvalidRateLimit::Refill(-1.0)
+        );
+        assert!(RateLimit::try_new(4.0, f64::NAN).is_err());
+        // Boundary values are fine: one token, no refill.
+        assert!(RateLimit::try_new(1.0, 0.0).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "burst must be finite and >= 1.0")]
+    fn admission_rejects_a_hand_built_invalid_limit() {
+        let limit = RateLimit {
+            burst: 0.0,
+            refill_per_tick: 1.0,
+        };
+        let _ = Admission::new(8, limit);
     }
 
     #[test]
