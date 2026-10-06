@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `RateLimit::new` and `Admission::new` now panic on a limit that could
+  never admit anything sensibly: a `burst` below `1.0` (which used to
+  rate-limit every intent silently), or a NaN, infinite, or negative
+  parameter. `RateLimit::try_new` returns an `InvalidRateLimit` error
+  instead of panicking. (FW-103)
 - Ledger digests length-prefix every text field, so field boundaries are
   unambiguous. Head digests differ from 0.1.0 for the same history.
 
