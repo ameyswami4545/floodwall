@@ -354,7 +354,7 @@ function FooterScene() {
         </nav>
         <div className="footer-bottom">
           <strong>SAN FRANCISCO BAY</strong>
-          <span>&copy; 2026 Floodwall. An ERP.AI project.</span>
+          <span>&copy; 2026 Floodwall. An ERP.AI project. · built with <a href="https://proto.erp.ai">Proto</a></span>
         </div>
       </div>
     </footer>
