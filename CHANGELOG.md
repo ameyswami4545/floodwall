@@ -22,8 +22,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rate-limit every intent silently), or a NaN, infinite, or negative
   parameter. `RateLimit::try_new` returns an `InvalidRateLimit` error
   instead of panicking. (FW-103)
+- `Admission` time never moves backwards: it keeps the latest tick any
+  call has supplied (`Admission::clock`), and a `submit` or `prune_idle`
+  stamped earlier is treated as that tick. Previously an earlier tick
+  skipped refill for that one call. (FW-104)
 - Ledger digests length-prefix every text field, so field boundaries are
   unambiguous. Head digests differ from 0.1.0 for the same history.
+
+### Fixed
+
+- `Admission` no longer keeps a rate-limit bucket for every agent id it
+  has ever seen. Once the tracked set passes a threshold, agents whose
+  buckets have refilled are forgotten; a full bucket is identical to a
+  new one and time never moves backwards, so no decision changes.
+  `Admission::prune_idle` and `Admission::tracked_agents` expose this
+  directly. (FW-104)
 
 ## [0.1.0] - 2026-06-28
 
