@@ -31,7 +31,7 @@ Still zero dependencies (SHA-256, SHA-512 and Ed25519 are from scratch)
 and pinned to Rust 1.95. 173 unit tests, 9 doctests (including the README
 examples), a randomized invariant test (300 seeded floods plus 6 signed
 ones, each ending in checkpoint audits), an edge-case export fixture, and
-16 tamper tests of the independent verifier; fmt + clippy (`-D warnings`)
+17 tamper tests of the independent verifier; fmt + clippy (`-D warnings`)
 clean.
 
 The floodwall.ai site (React + Vite in `site/`, built into `docs/` for

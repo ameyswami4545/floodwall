@@ -87,15 +87,22 @@ const hexOf = (bytes) => (h, what) => unhex(h, bytes, what);
 
 const PRIORITIES = ["bulk", "normal", "urgent", "pager"];
 const BLAST_RADII = ["cell", "service", "region", "global"];
-const ACTIONS = { apply: ["kind", "resource", "manifest"], scale: ["kind", "resource", "replicas"], destroy: ["kind", "resource"] };
+const ACTIONS = new Map([
+  ["apply", ["kind", "resource", "manifest"]],
+  ["scale", ["kind", "resource", "replicas"]],
+  ["destroy", ["kind", "resource"]],
+]);
 
 function checkIntent(i, what) {
   fields(i, ["id", "agent", "action", "priority", "blast_radius", "signature"], what);
   decimalU64(i.id, `${what}.id`);
   string(i.agent, `${what}.agent`);
   const a = i.action;
-  if (!isObject(a) || !Object.hasOwn(ACTIONS, a.kind)) throw new Error(`${what}.action is not an apply, scale or destroy`);
-  fields(a, ACTIONS[a.kind], `${what}.action`);
+  if (!isObject(a)) throw new Error(`${what}.action is not a JSON object`);
+  // Exactly one of the three strings: used as a property name, ["apply"]
+  // would read as "apply".
+  if (typeof a.kind !== "string" || !ACTIONS.has(a.kind)) throw new Error(`${what}.action.kind is not "apply", "scale" or "destroy"`);
+  fields(a, ACTIONS.get(a.kind), `${what}.action`);
   string(a.resource, `${what}.action.resource`);
   if (a.kind === "apply") string(a.manifest, `${what}.action.manifest`);
   if (a.kind === "scale" && !(Number.isInteger(a.replicas) && a.replicas >= 0 && a.replicas <= 0xffffffff)) {
@@ -171,25 +178,41 @@ function canonical(v) {
 // The intent encoding (src/intent.rs, "Signing", v1).
 export function intentDigest(i) {
   checkIntent(i, "intent");
-  const a = i.action;
-  const action =
-    a.kind === "apply"
-      ? [Buffer.from([0]), field(a.resource), field(a.manifest)]
-      : a.kind === "scale"
-        ? [Buffer.from([1]), field(a.resource), u32(a.replicas)]
-        : [Buffer.from([2]), field(a.resource)];
   return sha256(
     field("floodwall/intent/v1"),
     field(i.agent),
     u64(BigInt(i.id)),
-    ...action,
+    ...actionBytes(i.action),
     Buffer.from([PRIORITIES.indexOf(i.priority), BLAST_RADII.indexOf(i.blast_radius)]),
   );
 }
+// Each kind is matched exactly; nothing falls through to another kind.
+function actionBytes(a) {
+  switch (a.kind) {
+    case "apply":
+      return [Buffer.from([0]), field(a.resource), field(a.manifest)];
+    case "scale":
+      return [Buffer.from([1]), field(a.resource), u32(a.replicas)];
+    case "destroy":
+      return [Buffer.from([2]), field(a.resource)];
+    default:
+      throw new Error(`unknown action kind ${JSON.stringify(a.kind)}`);
+  }
+}
 
 // The record a ledger shows for an intent's action (src/intent.rs, Display).
-const summary = (a) =>
-  a.kind === "apply" ? `apply ${a.resource}` : a.kind === "scale" ? `scale ${a.resource} to ${a.replicas}` : `destroy ${a.resource}`;
+function summary(a) {
+  switch (a.kind) {
+    case "apply":
+      return `apply ${a.resource}`;
+    case "scale":
+      return `scale ${a.resource} to ${a.replicas}`;
+    case "destroy":
+      return `destroy ${a.resource}`;
+    default:
+      throw new Error(`unknown action kind ${JSON.stringify(a.kind)}`);
+  }
+}
 
 // The record encoding (src/ledger.rs, "Record encoding", v2).
 export function recordDigest(r) {
@@ -276,16 +299,18 @@ const signedBy = (key, message, sigHex) => sigHex !== null && edVerify(null, mes
 
 /**
  * Check a parsed keys file and load its keys: {"plane": hex|null, "agents":
- * {name: hex}, "retired": {name: [hex, ...]}}, "retired" optional. Throws
- * unless it is exactly that.
+ * {name: hex}, "retired": {name: [hex, ...]}}. "retired" may be left out,
+ * but if it is there it must be an object. Throws unless the file is
+ * exactly that.
  */
 export function loadKeys(keys) {
   if (!isObject(keys)) throw new Error("the keys file is not a JSON object");
-  fields(keys, Object.hasOwn(keys, "retired") ? ["plane", "agents", "retired"] : ["plane", "agents"], "the keys file", false);
+  const hasRetired = Object.hasOwn(keys, "retired");
+  fields(keys, hasRetired ? ["plane", "agents", "retired"] : ["plane", "agents"], "the keys file", false);
   const plane = keys.plane === null ? null : publicKey(keys.plane, "the plane key");
   if (!isObject(keys.agents)) throw new Error("the keys file's agents is not a JSON object");
-  const retired = keys.retired ?? {};
-  if (!isObject(retired)) throw new Error("the keys file's retired is not a JSON object");
+  if (hasRetired && !isObject(keys.retired)) throw new Error("the keys file's retired is not a JSON object");
+  const retired = hasRetired ? keys.retired : {};
   const agents = new Map();
   for (const [name, k] of Object.entries(keys.agents)) agents.set(name, [publicKey(k, `${name}'s key`)]);
   for (const [name, ks] of Object.entries(retired)) {

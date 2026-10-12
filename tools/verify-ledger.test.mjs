@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadKeys, recordDigest, verifyLedger } from "./verify-ledger.mjs";
+import { intentDigest, loadKeys, recordDigest, verifyLedger } from "./verify-ledger.mjs";
 
 const ledgerDir = process.env.LEDGER_DIR ?? "target/audit";
 const fixtureDir = process.env.FIXTURE_DIR ?? "target/export-fixture";
@@ -224,7 +224,8 @@ test("records are checked against the exact schema before hashing", () => {
   fails(edit(edge, i, (o) => (o.extra = 1)), edgeKeys, /unknown field "extra"/);
   fails(edit(edge, i, (o) => delete o.reason), edgeKeys, /has no "reason"/);
   fails(edit(edge, i, (o) => (o.intent.action.replicas = 2 ** 32)), edgeKeys, /replicas is not a u32/);
-  fails(edit(edge, i, (o) => (o.intent.action.kind = "restart")), edgeKeys, /not an apply, scale or destroy/);
+  fails(edit(edge, i, (o) => (o.intent.action.kind = "restart")), edgeKeys, /intent\.action\.kind is not "apply", "scale" or "destroy"/);
+  fails(edit(edge, i, (o) => (o.intent.action = [])), edgeKeys, /intent\.action is not a JSON object/);
   fails(edit(edge, i, (o) => (o.intent.action.manifest = "x")), edgeKeys, /unknown field "manifest"/);
   fails(edit(edge, i, (o) => (o.intent.priority = 3)), edgeKeys, /priority is not one of/);
   fails(edit(edge, i, (o) => (o.intent.blast_radius = "planet")), edgeKeys, /blast_radius is not one of/);
@@ -232,6 +233,42 @@ test("records are checked against the exact schema before hashing", () => {
   // recordDigest itself refuses to hash a malformed record.
   assert.throws(() => recordDigest({ ...r, policies: [["a", "b", "c"]] }), /is not a \[name, label\] pair/);
   assert.throws(() => recordDigest({ ...r, intent_id: 1 }), /intent_id is not a u64/);
+});
+
+test("an intent's action kind and other names must be exactly one of their strings", () => {
+  // Review repro on PR #15, on the real signed demo export: a signed
+  // destroy whose kind is the array ["apply"] (or ["destroy"]) once read as
+  // the string through a property lookup, while the digest fell through to
+  // destroy, so the record kept its digest and its agent's signature.
+  const [i, r] = recordLines(whole).find(([, o]) => o.intent?.action.kind === "destroy");
+  const { resource } = r.intent.action;
+  assert.equal(r.action, `destroy ${resource}`);
+  assert.equal(verifyLedger(whole, keys).signatures, recordLines(whole).length);
+  const kindNotExact = new RegExp(`line ${i + 1}: intent\\.action\\.kind is not "apply", "scale" or "destroy"`);
+  const forged = [
+    { kind: ["apply"], resource, manifest: "arbitrary unsigned manifest" },
+    { kind: ["destroy"], resource },
+    { kind: ["scale"], resource, replicas: 0 },
+    { kind: [["destroy"]], resource },
+    { kind: "Destroy", resource },
+    { kind: "destroy ", resource },
+    { kind: null, resource },
+    { kind: 2, resource },
+    { kind: {}, resource },
+    { resource },
+  ];
+  for (const action of forged) {
+    const text = edit(whole, i, (o) => (o.intent.action = action));
+    fails(text, keys, kindNotExact);
+    fails(text, null, kindNotExact);
+  }
+  // Neither the digest nor the summary has a default kind to fall into.
+  assert.throws(() => intentDigest({ ...r.intent, action: { kind: ["destroy"], resource } }), /action\.kind is not/);
+  assert.equal(intentDigest(r.intent).length, 32);
+  // The other names in an intent are matched exactly too.
+  fails(edit(whole, i, (o) => (o.intent.priority = [o.intent.priority])), keys, /intent\.priority is not one of/);
+  fails(edit(whole, i, (o) => (o.intent.blast_radius = [o.intent.blast_radius])), keys, /intent\.blast_radius is not one of/);
+  fails(edit(whole, i, (o) => (o.type = ["record"])), keys, /unknown line type/);
 });
 
 test("a line must be written exactly as floodwall writes it", () => {
@@ -321,6 +358,18 @@ test("a supplied keys file must be a valid keys object", () => {
   assert.throws(() => loadKeys({ ...keys, agents: { deployer: "02" + "00".repeat(31) } }), /not a valid Ed25519 public key/);
   assert.doesNotThrow(() => loadKeys(keys));
   assert.doesNotThrow(() => loadKeys({ plane: null, agents: {} }));
+  // "retired" may be left out, or be an object (empty or not), but nothing
+  // else: an explicit null is not the same as leaving it out.
+  const { retired, ...withoutRetired } = keys;
+  assert.ok(Object.hasOwn(keys, "retired"));
+  assert.doesNotThrow(() => loadKeys(withoutRetired));
+  assert.doesNotThrow(() => loadKeys({ ...keys, retired: {} }));
+  assert.doesNotThrow(() => loadKeys({ ...keys, retired: { deployer: [keys.agents.autoscaler] } }));
+  for (const bad of [null, [], "", 0, false, [keys.agents.deployer]]) {
+    assert.throws(() => loadKeys({ ...keys, retired: bad }), /the keys file's retired is not a JSON object/, JSON.stringify(bad));
+    assert.throws(() => verifyLedger(whole, { ...keys, retired: bad }), /the keys file's retired is not a JSON object/);
+  }
+  assert.throws(() => loadKeys({ ...keys, retired: { deployer: null } }), /retired keys are not an array/);
 });
 
 test("the CLI never falls back to hash-only checks for a bad keys file", () => {
@@ -331,7 +380,7 @@ test("the CLI never falls back to hash-only checks for a bad keys file", () => {
   let r = cli(unsigned, JSON.stringify(keys));
   assert.equal(r.status, 1);
   assert.match(r.stderr, /not signed by the plane/);
-  for (const bad of ["null", "[]", "5", '"keys"', "{}", '{"plane":null}', "", "{not json"]) {
+  for (const bad of ["null", "[]", "5", '"keys"', "{}", '{"plane":null}', "", "{not json", JSON.stringify({ ...keys, retired: null })]) {
     r = cli(unsigned, bad);
     assert.equal(r.status, 1, `keys file ${JSON.stringify(bad)}`);
     assert.match(r.stderr, /FAILED: the keys file/);
