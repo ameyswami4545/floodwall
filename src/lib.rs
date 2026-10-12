@@ -61,11 +61,13 @@
 
 pub mod admission;
 pub mod checkpoint;
+pub mod durable;
 pub mod ed25519;
 pub mod export;
 pub mod gate;
 pub mod hold;
 pub mod intent;
+mod json;
 pub mod keyring;
 pub mod ledger;
 pub mod merkle;
@@ -79,6 +81,7 @@ use std::fmt;
 
 pub use admission::{Admission, InvalidRateLimit, RateLimit, Rejected};
 pub use checkpoint::{audit_suffix, AuditError, Checkpoint};
+pub use durable::{ReadError, WriteError};
 pub use ed25519::{InvalidKey, Signature, SigningKey, VerifyingKey};
 pub use gate::{Gate, GateDecision};
 pub use hold::{Held, HoldConfig, HoldError};
@@ -201,6 +204,19 @@ impl std::error::Error for DuplicateQueued {}
 /// Every method that takes a `now` shares one clock, the latest tick any
 /// call has supplied ([`Floodwall::clock`]). A `now` earlier than the clock
 /// is treated as the clock, so time never moves backwards.
+///
+/// # Durability
+///
+/// With a ledger on disk ([`Ledger::create`], passed to
+/// [`Floodwall::with_ledger`]), every call that records something
+/// ([`tick`](Floodwall::tick), [`release`](Floodwall::release),
+/// [`expire`](Floodwall::expire), [`complete`](Floodwall::complete),
+/// [`checkpoint`](Floodwall::checkpoint)) has written and synced its
+/// records before it returns, so a decision is on disk before anyone can
+/// act on it. If the ledger cannot be written, the call panics instead of
+/// returning, and the plane must not be used again: what reached the disk
+/// is unknown (see [`crate::durable`]). Reopen the file with
+/// [`Ledger::open`] to see it.
 pub struct Floodwall {
     admission: Admission,
     scheduler: Scheduler,
@@ -363,6 +379,11 @@ impl Floodwall {
     /// Everything is recorded in the ledger. Admitted intents are
     /// dispatched: apply them, then call [`Floodwall::complete`]. Deferred
     /// intents are held: see [`Floodwall::release`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and cannot be written (see
+    /// [Durability](Floodwall#durability)).
     pub fn tick(&mut self, now: u64) -> TickReport {
         let now = self.advance(now);
         let mut report = TickReport::default();
@@ -406,6 +427,7 @@ impl Floodwall {
                 }
             }
         }
+        self.persist();
         report
     }
 
@@ -503,6 +525,11 @@ impl Floodwall {
     /// Fails with [`HoldError::NotHeld`] if the intent is not held, and with
     /// [`HoldError::Backpressure`] if the queue is full, in which case it
     /// stays held.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and cannot be written (see
+    /// [Durability](Floodwall#durability)).
     pub fn release(&mut self, key: &IntentKey, by: &str, now: u64) -> Result<(), HoldError> {
         let now = self.advance(now);
         if !self.hold.contains(key) {
@@ -517,6 +544,7 @@ impl Floodwall {
             held.since, held.reason
         );
         self.record(&held.intent, "released", Some(reason), Vec::new());
+        self.persist();
         self.admission
             .requeue(held.intent, now)
             .expect("checked the queue has room above");
@@ -527,6 +555,11 @@ impl Floodwall {
     /// Drop a held intent at logical time `now`, on the authority of `by`
     /// (recorded in the ledger), and return it. Its key may then be
     /// submitted again.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and cannot be written (see
+    /// [Durability](Floodwall#durability)).
     pub fn expire(&mut self, key: &IntentKey, by: &str, now: u64) -> Result<Held, HoldError> {
         self.advance(now);
         let held = self
@@ -540,12 +573,18 @@ impl Floodwall {
             Some(format!("expired by {by}")),
             Vec::new(),
         );
+        self.persist();
         Ok(held)
     }
 
     /// Report that applying an in-flight intent finished at logical time
     /// `now`. Frees its place in the scheduler, records the outcome in the
     /// ledger, and returns the intent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and cannot be written (see
+    /// [Durability](Floodwall#durability)).
     pub fn complete(
         &mut self,
         key: &IntentKey,
@@ -563,9 +602,13 @@ impl Floodwall {
             Outcome::Failed(why) => Some(why.clone()),
         };
         self.record(&finished.intent, outcome.label(), reason, Vec::new());
+        self.persist();
         Ok(finished.intent)
     }
 
+    /// Record what happened to `intent`. A ledger on disk writes the record
+    /// now and syncs it in [`Floodwall::persist`], before the call that
+    /// recorded it returns.
     fn record(
         &mut self,
         intent: &Intent,
@@ -573,7 +616,20 @@ impl Floodwall {
         reason: Option<String>,
         policies: Vec<(String, String)>,
     ) {
-        self.ledger.append_intent(intent, label, reason, policies);
+        if let Err(e) = self
+            .ledger
+            .write_intent(intent, label, reason, policies, false)
+        {
+            ledger::write_failed(e);
+        }
+    }
+
+    /// Sync what this call recorded to a ledger on disk, before the call
+    /// returns and its decisions can be acted on.
+    fn persist(&mut self) {
+        if let Err(e) = self.ledger.sync() {
+            ledger::write_failed(e);
+        }
     }
 
     /// How many intents are waiting at the wall.
@@ -613,12 +669,14 @@ impl Floodwall {
 
     /// Record decisions in `ledger`, set up with checkpoints and a signer
     /// as needed (see [`Ledger::with_checkpoints`] and
-    /// [`Ledger::with_signer`]).
+    /// [`Ledger::with_signer`]). A ledger on disk ([`Ledger::create`]) keeps
+    /// every decision durably (see [Durability](Floodwall#durability)).
     ///
     /// # Panics
     ///
     /// Panics if `ledger` already has records, or this plane has already
     /// recorded something: a ledger is one plane's history from the start.
+    /// (Resuming a plane from a reopened ledger is FW-402.)
     pub fn with_ledger(mut self, ledger: Ledger) -> Self {
         assert!(
             ledger.is_empty() && self.ledger.is_empty(),
@@ -630,6 +688,11 @@ impl Floodwall {
 
     /// Cut a checkpoint of the ledger now, unless the latest one already
     /// covers every record, and return it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and cannot be written (see
+    /// [Durability](Floodwall#durability)).
     pub fn checkpoint(&mut self) -> Checkpoint {
         self.ledger.checkpoint()
     }

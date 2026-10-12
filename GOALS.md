@@ -92,9 +92,12 @@ independent model).
   `export_jsonl_from(checkpoint)`; `tools/verify-ledger.mjs` verifies
   exports with only Node's standard library, in CI.
 
-## v0.4 - persistence + replay ◦ next
+## v0.4 - persistence + replay ◦ in progress
 
-- **FW-401** Durable, append-only ledger on disk.
+- **FW-401** ✓ Durable, append-only ledger on disk. `Ledger::create` and
+  `Ledger::open` keep the ledger in a file that is its JSON Lines export,
+  synced before any decision is reported; opening locks the file, checks
+  it from genesis, and recovers from a crash mid-write.
 - **FW-402** Rebuild full plane state (buckets, queue watermarks) from the
   ledger on restart.
 - **FW-403** Property test: replay(record-stream) reproduces the live
