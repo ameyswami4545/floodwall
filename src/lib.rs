@@ -606,9 +606,9 @@ impl Floodwall {
         Ok(finished.intent)
     }
 
-    /// Record what happened to `intent`. A ledger on disk writes the record
-    /// now and syncs it in [`Floodwall::persist`], before the call that
-    /// recorded it returns.
+    /// Record what happened to `intent`, at the plane's clock. A ledger on
+    /// disk writes the record now and syncs it in [`Floodwall::persist`],
+    /// before the call that recorded it returns.
     fn record(
         &mut self,
         intent: &Intent,
@@ -616,6 +616,7 @@ impl Floodwall {
         reason: Option<String>,
         policies: Vec<(String, String)>,
     ) {
+        self.ledger.advance_clock(self.clock);
         if let Err(e) = self
             .ledger
             .write_intent(intent, label, reason, policies, false)
@@ -1404,6 +1405,51 @@ mod tests {
         assert_eq!(p.ledger().len(), records);
         p.tick(1); // drains the queue
         assert_eq!(p.release(&key, "alice", 2), Ok(()));
+    }
+
+    #[test]
+    fn every_record_carries_the_tick_it_happened_at() {
+        let mut p = plane().with_hold(HoldConfig::default().with_ttl(Some(10)));
+        let (web, held, stale) = (scale(1, "web"), off_list(2), off_list(3));
+        for i in [&web, &held, &stale] {
+            p.submit(i.clone(), 0).unwrap();
+        }
+        p.tick(5); // web admitted, the other two held
+        p.complete(&web.key(), Outcome::Succeeded, 7).unwrap();
+        // A tick earlier than the clock is the clock.
+        p.release(&held.key(), "alice", 3).unwrap();
+        p.tick(8); // the released intent is ruled on again
+        p.tick(15); // the other one has been held for the TTL
+        let got: Vec<(String, u64)> = p
+            .ledger()
+            .records()
+            .iter()
+            .map(|r| (r.verdict.clone(), r.tick))
+            .collect();
+        let want = [
+            ("admit", 5),
+            ("defer", 5),
+            ("defer", 5),
+            ("succeeded", 7),
+            ("released", 7),
+            ("admit", 8),
+            ("expired", 15),
+        ];
+        assert_eq!(
+            got,
+            want.map(|(v, t)| (v.to_string(), t)),
+            "verdicts and ticks"
+        );
+        assert_eq!((p.clock(), p.ledger().clock()), (15, 15));
+        assert!(p.ledger().verify());
+        // An operator's expiry, and a plane adopting a ledger that is behind
+        // its clock, both use the plane's clock.
+        let mut q = plane().with_ledger(Ledger::new());
+        q.submit(off_list(4), 20).unwrap();
+        q.tick(0);
+        q.expire(&off_list(4).key(), "bob", 1).unwrap();
+        let ticks: Vec<u64> = q.ledger().records().iter().map(|r| r.tick).collect();
+        assert_eq!(ticks, [20, 20]);
     }
 
     #[test]

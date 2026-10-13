@@ -462,6 +462,7 @@ mod tests {
             },
         ];
         for (n, action) in actions.into_iter().enumerate() {
+            ledger.advance_clock(from + 2 * n as u64 + 1);
             let id = if n == 0 {
                 u64::MAX - from
             } else {
@@ -760,7 +761,7 @@ mod tests {
             "a suffix export",
         );
         check(
-            edit(1, &|l| l.replace("record/v2", "record/v1")),
+            edit(1, &|l| l.replace("record/v3", "record/v2")),
             1,
             "unsupported record_encoding",
         );
@@ -836,6 +837,12 @@ mod tests {
             rehash(3, &|r| r.prev = crate::Digest::GENESIS),
             3,
             "record 1 does not link to the record before it",
+        );
+        // Records 0 and 1 are at ticks 1 and 3.
+        check(
+            rehash(3, &|r| r.tick = 0),
+            3,
+            "record 1 is at tick 0, before the record before it (tick 1)",
         );
         check(
             rehash(3, &|r| r.evidence.action = "destroy everything".into()),
