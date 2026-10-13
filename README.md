@@ -199,8 +199,9 @@ wall.submit(scale(2, "api"), 1).unwrap(); // queued, and on disk
 drop(wall); // the process stops
 
 // After the restart: the ledger is read back, checked from genesis, and
-// replayed, so the plane holds exactly what it held before.
-let wall = plane().resume(Ledger::open(&path).unwrap()).unwrap();
+// replayed, so the plane holds exactly what it held before. It restarts at
+// tick 1, the last tick it was given.
+let wall = plane().resume(Ledger::open(&path).unwrap(), 1).unwrap();
 assert_eq!(wall.in_flight().count(), 1);
 assert_eq!(wall.pending(), 1);
 # drop(wall);

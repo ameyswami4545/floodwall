@@ -38,7 +38,8 @@
 //! // (a file, with `Ledger::open`, or here an export read back).
 //! let mut export = Vec::new();
 //! before.ledger().export_jsonl(&mut export).unwrap();
-//! let after = plane().resume(Ledger::read_jsonl(&export[..]).unwrap()).unwrap();
+//! let ledger = Ledger::read_jsonl(&export[..]).unwrap();
+//! let after = plane().resume(ledger, 2).unwrap(); // at tick 2, where it stopped
 //! assert_eq!(after.in_flight().count(), 1);
 //! assert_eq!(after.pending(), 1);
 //! assert_eq!(after.clock(), 2);
@@ -76,12 +77,18 @@
 //!
 //! # The clock
 //!
-//! The resumed plane's clock is the tick of the last record. A call that
+//! The plane's clock is the latest tick any call has passed it, and a
+//! `now` earlier than the clock is treated as the clock. A call that
 //! recorded nothing (a pass that ruled on nothing, a refused submission)
-//! may have moved the clock further before the restart; that is not in the
-//! ledger, and it changed nothing else, so no decision depends on it. It
-//! only shows if the caller then passes a tick earlier than one it passed
-//! before the restart, which the clock would otherwise have clamped.
+//! still moves the clock, and that is not in the ledger: the replay only
+//! brings the clock to the last record's tick. Left there, a later call
+//! with a tick between the two would not be clamped as it would have been,
+//! and could record a different tick, and through hold TTLs and conflict
+//! windows a different decision. So [`Floodwall::resume`] takes `now`, the
+//! tick the plane restarts at: the latest tick passed to the plane before
+//! it stopped, or any later one, such as the current time from a clock
+//! that never goes back. With that, the restarted plane carries on exactly
+//! as if it had not stopped.
 //!
 //! # What cannot be replayed
 //!
@@ -202,13 +209,19 @@ enum Call {
 impl Floodwall {
     /// Pick up where a plane left off: replay `ledger` on this plane, which
     /// must be newly built with the same configuration as the plane that
-    /// wrote it, and keep recording in `ledger` from there. See
-    /// [`crate::replay`] for what is replayed and what must match.
+    /// wrote it, and keep recording in `ledger` from there, at tick `now`.
+    /// See [`crate::replay`] for what is replayed and what must match.
     ///
     /// Set up `ledger` as the plane's ledger was: for a ledger file,
     /// [`Ledger::open`] it and set its checkpoint interval and signer again
     /// ([`Ledger::with_checkpoints`], [`Ledger::with_signer`]). An empty
     /// ledger is fine: resuming from it is [`Floodwall::with_ledger`].
+    ///
+    /// `now` is the tick the plane restarts at: the latest tick passed to
+    /// the plane before it stopped, or any later one, such as the current
+    /// time from a clock that never goes back. The plane's clock becomes
+    /// the later of `now` and the last record's tick (see
+    /// [The clock](crate::replay#the-clock)).
     ///
     /// Fails with [`ResumeError::NotFresh`] if this plane has queued or
     /// recorded anything, [`ResumeError::Unverified`] if `ledger` does not
@@ -226,7 +239,7 @@ impl Floodwall {
     ///
     /// Panics if finishing a call needs to write to a ledger on disk and the
     /// write fails (see [Durability](Floodwall#durability)).
-    pub fn resume(mut self, mut ledger: Ledger) -> Result<Floodwall, ResumeError> {
+    pub fn resume(mut self, mut ledger: Ledger, now: u64) -> Result<Floodwall, ResumeError> {
         if !self.ledger.is_empty() || !self.admission.is_empty() || !self.live.is_empty() {
             return Err(ResumeError::NotFresh);
         }
@@ -281,6 +294,7 @@ impl Floodwall {
         }
         debug_assert_eq!(ledger.head(), self.ledger.head());
         self.ledger = ledger;
+        self.advance(now);
         Ok(self)
     }
 
@@ -506,7 +520,7 @@ mod tests {
         }
     }
 
-    /// Everything about a plane its methods show, but its clock.
+    /// Everything about a plane its methods show.
     fn state(p: &Floodwall) -> String {
         let queued: Vec<IntentKey> = p.queued().map(Intent::key).collect();
         let in_flight: Vec<(IntentKey, u64)> =
@@ -516,7 +530,8 @@ mod tests {
             .map(|h| (h.intent.key(), h.since, h.reason.clone()))
             .collect();
         format!(
-            "queued {queued:?} in flight {in_flight:?} held {held:?} head {}",
+            "clock {} queued {queued:?} in flight {in_flight:?} held {held:?} head {}",
+            p.clock(),
             p.ledger().head()
         )
     }
@@ -575,13 +590,11 @@ mod tests {
                 run(&mut before, op);
             }
             let mut after = plane()
-                .resume(reread(before.ledger()))
+                .resume(reread(before.ledger()), before.clock())
                 .unwrap_or_else(|e| panic!("stopping after {stop} calls: {e}"));
             assert_eq!(state(&after), state(&before), "stopping after {stop} calls");
-            // The clock comes back as the last record's tick: a call that
-            // recorded nothing may have moved it further (see "The clock").
-            assert_eq!(after.clock(), before.ledger().clock());
-            assert!(after.clock() <= before.clock());
+            // The clock comes back too, given the tick it stopped at.
+            assert_eq!(after.clock(), before.clock());
             for (n, op) in ops.iter().enumerate().skip(stop) {
                 assert_eq!(
                     run(&mut after, op),
@@ -616,12 +629,13 @@ mod tests {
             run(&mut p, op);
             if n % 5 == 4 {
                 // A restart: the file is closed, reopened and replayed.
+                let clock = p.clock();
                 drop(p);
                 let ledger = Ledger::open(&path)
                     .unwrap()
                     .with_checkpoints(4)
                     .with_signer(signer.clone());
-                p = plane().resume(ledger).unwrap();
+                p = plane().resume(ledger, clock).unwrap();
             }
         }
         assert_eq!(state(&p), state(&whole));
@@ -636,6 +650,33 @@ mod tests {
         );
         drop(reopened);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_restart_keeps_the_clock_a_call_moved_without_recording() {
+        let mut before = plane();
+        before.submit(scale("a", 1, "web", 2), 0).unwrap();
+        // Refused, so recorded nothing, but the clock is now 5.
+        assert_eq!(
+            before.submit(scale("a", 1, "web", 2), 5),
+            Err(Rejected::Duplicate)
+        );
+        assert_eq!((before.clock(), before.ledger().clock()), (5, 0));
+        let ledger = reread(before.ledger());
+        // Without a restart, an arrival at tick 3 is recorded at the clock.
+        before.submit(scale("b", 1, "api", 2), 3).unwrap();
+        let tick = |p: &Floodwall| p.ledger().records().last().unwrap().tick;
+        assert_eq!(tick(&before), 5);
+        // Restarted at the tick it stopped at, it does the same.
+        let mut after = plane().resume(reread(&ledger), 5).unwrap();
+        after.submit(scale("b", 1, "api", 2), 3).unwrap();
+        assert_eq!(tick(&after), 5);
+        assert_eq!(after.ledger().head(), before.ledger().head());
+        // Restarted at an earlier tick, it cannot know: that is why resume
+        // asks for one.
+        let mut early = plane().resume(ledger, 0).unwrap();
+        early.submit(scale("b", 1, "api", 2), 3).unwrap();
+        assert_eq!(tick(&early), 3);
     }
 
     #[test]
@@ -663,7 +704,7 @@ mod tests {
                 r.evidence.policies.clone(),
             );
         }
-        let resumed = plane().resume(cut).unwrap();
+        let resumed = plane().resume(cut, 1).unwrap();
         assert_eq!(state(&resumed), state(&whole));
         assert_eq!(resumed.ledger().len(), 6);
         assert_eq!(resumed.in_flight().count(), 2);
@@ -674,15 +715,18 @@ mod tests {
         let mut used = plane();
         used.submit(scale("a", 1, "web", 2), 0).unwrap();
         assert_eq!(
-            used.resume(Ledger::new()).err(),
+            used.resume(Ledger::new(), 0).err(),
             Some(ResumeError::NotFresh)
         );
         let mut adopting = Admission::new(4, RateLimit::new(3.0, 1.0));
         adopting.submit(scale("a", 1, "web", 2), 0).unwrap();
         let p = Floodwall::new(adopting, Gate::new());
-        assert_eq!(p.resume(Ledger::new()).err(), Some(ResumeError::NotFresh));
+        assert_eq!(
+            p.resume(Ledger::new(), 0).err(),
+            Some(ResumeError::NotFresh)
+        );
         // An empty ledger is just a ledger to start from.
-        let p = plane().resume(Ledger::new()).unwrap();
+        let p = plane().resume(Ledger::new(), 0).unwrap();
         assert!(p.ledger().is_empty());
     }
 
@@ -725,7 +769,7 @@ mod tests {
             .position(|r| r.verdict == "admit")
             .unwrap();
         let seq = first_admit as u64;
-        match plane().resume(forge(ledger, first_admit, "reject")) {
+        match plane().resume(forge(ledger, first_admit, "reject"), 0) {
             Err(ResumeError::Diverged {
                 seq: s,
                 expected,
@@ -751,7 +795,7 @@ mod tests {
         )
         .with_hold(HoldConfig::default().with_capacity(2).with_ttl(Some(6)))
         .with_keyring(keyring());
-        let err = refused(lax.resume(reread(ledger)));
+        let err = refused(lax.resume(reread(ledger), 0));
         assert_eq!(
             err,
             ResumeError::Diverged {
@@ -773,7 +817,7 @@ mod tests {
                 .with(NoGlobalDestroy)
                 .with(ResourceAllowlist::new(["web", "api"])),
         );
-        match refused(unkeyed.resume(reread(ledger))) {
+        match refused(unkeyed.resume(reread(ledger), 0)) {
             ResumeError::Diverged {
                 expected, found, ..
             } => {
@@ -788,7 +832,7 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let small = Floodwall::new(Admission::new(1, RateLimit::new(3.0, 0.5)), Gate::new());
-        let err = refused(small.resume(reread(ledger)));
+        let err = refused(small.resume(reread(ledger), 0));
         assert_eq!(
             err,
             ResumeError::Diverged {
@@ -808,7 +852,7 @@ mod tests {
             .iter()
             .position(|r| r.verdict == "released")
             .unwrap();
-        let err = refused(plane().resume(forge(ledger, held, "admit")));
+        let err = refused(plane().resume(forge(ledger, held, "admit"), 0));
         assert!(matches!(err, ResumeError::Diverged { .. }), "{err}");
     }
 
@@ -817,7 +861,7 @@ mod tests {
         let mut direct = Ledger::new();
         direct.append(1, "ops", "released");
         assert_eq!(
-            plane().resume(direct).err(),
+            plane().resume(direct, 0).err(),
             Some(ResumeError::Unreplayable {
                 seq: 0,
                 why: "it is not about an intent, so no plane wrote it".into()
@@ -825,7 +869,7 @@ mod tests {
         );
         let mut odd = Ledger::new();
         odd.append_intent(&scale("a", 1, "web", 2), "maybe", None, vec![]);
-        let err = refused(plane().resume(odd));
+        let err = refused(plane().resume(odd, 0));
         assert_eq!(
             err.to_string(),
             "record 0 cannot be replayed: no plane writes this verdict"
@@ -834,7 +878,10 @@ mod tests {
         let mut broken = Ledger::new().with_checkpoints(1);
         broken.append_intent(&scale("a", 1, "web", 2), QUEUED, None, vec![]);
         broken.checkpoints_mut()[0].root.0[0] ^= 1;
-        assert_eq!(plane().resume(broken).err(), Some(ResumeError::Unverified));
+        assert_eq!(
+            plane().resume(broken, 0).err(),
+            Some(ResumeError::Unverified)
+        );
         assert_eq!(
             ResumeError::NotFresh.to_string(),
             "the plane has already queued or recorded something; resume a newly built plane"
@@ -854,7 +901,7 @@ mod tests {
             .with_retired("a", key("a").verifying_key());
         let mut q = plane()
             .with_keyring(rotated.clone())
-            .resume(reread(p.ledger()))
+            .resume(reread(p.ledger()), p.clock())
             .unwrap();
         assert_eq!(q.in_flight().count(), 1);
         assert_eq!(q.ledger().verify_signatures(&rotated), Ok(2));

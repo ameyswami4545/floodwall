@@ -199,10 +199,12 @@ fn main() {
                     eprintln!("reopening {} failed: {e}", path.display());
                     process::exit(1);
                 });
-            plane = build_plane(&keyring).resume(ledger).unwrap_or_else(|e| {
-                eprintln!("restarting from {} failed: {e}", path.display());
-                process::exit(1);
-            });
+            plane = build_plane(&keyring)
+                .resume(ledger, now)
+                .unwrap_or_else(|e| {
+                    eprintln!("restarting from {} failed: {e}", path.display());
+                    process::exit(1);
+                });
             let resumed = (
                 plane.pending(),
                 plane.in_flight().count(),

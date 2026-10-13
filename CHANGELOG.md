@@ -67,7 +67,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - A plane picks up where it left off after a restart (FW-402, FW-405).
-  `Floodwall::resume(ledger)` replays a plane's ledger on a newly built
+  `Floodwall::resume(ledger, now)` replays a plane's ledger on a newly built
   plane with the same configuration: it makes the same calls at the same
   ticks and checks each one writes exactly the record the ledger holds,
   so the queue and its order, every agent's rate-limit bucket, what is in
@@ -78,7 +78,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   differently (saying what differs); records no plane writes are
   `ResumeError::Unreplayable`. A tick a crash cut short is finished.
   Signatures are not checked again, so a rotated key does not stop a
-  restart.
+  restart. `now` is the tick the plane restarts at (the latest tick it
+  was given, or later): a call that recorded nothing still moved the
+  clock, which the ledger cannot show.
   - **Breaking:** every intent that gets into the queue is now recorded,
     as `queued` (`QUEUED`), and synced before `submit` returns, so an
     accepted intent is not lost if the plane stops before ruling on it.

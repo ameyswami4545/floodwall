@@ -40,7 +40,7 @@ of its own, checks it from genesis, and discards only a last line a crash
 left unfinished; any other bad line is refused and the file left alone.
 
 Still zero dependencies (SHA-256, SHA-512, Ed25519 and the JSON reader are
-from scratch) and pinned to Rust 1.95. 211 unit tests, 12 doctests
+from scratch) and pinned to Rust 1.95. 212 unit tests, 12 doctests
 (including the README examples), a randomized invariant test (300 seeded
 floods plus 6 signed ones, each ending in checkpoint audits), an edge-case
 export fixture that is also kept on disk, and 18 tamper tests of the
@@ -90,9 +90,11 @@ GitHub Pages) describes the scheduler and hold queue.
   yet is not, and takes effect from the restart on. A plane that started
   from an `Admission` that already held intents cannot be resumed, since
   their arrival is not in its ledger.
-- After a restart the clock is the last record's tick: a call that
-  recorded nothing (a pass that ruled on nothing) may have moved it
-  further, which only matters if the caller then goes back in time.
+- A call that records nothing still moves the plane's clock, which the
+  ledger cannot show, so `Floodwall::resume` needs the tick to restart
+  at: the latest tick the plane was given, or later (the current time,
+  from a clock that never goes back). A caller that passes an earlier one
+  gets a plane whose clock is behind where it was.
 - The ledger file's lock is advisory on Unix (`flock`), so it binds other
   floodwall processes, not programs that ignore it. On Windows it is
   mandatory and also keeps other programs from reading the file while it
