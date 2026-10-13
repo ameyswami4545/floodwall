@@ -92,7 +92,7 @@ independent model).
   `export_jsonl_from(checkpoint)`; `tools/verify-ledger.mjs` verifies
   exports with only Node's standard library, in CI.
 
-## v0.4 - persistence + replay ◦ in progress
+## v0.4 - persistence + replay ✦ **done**
 
 - **FW-401** ✓ Durable, append-only ledger on disk. `Ledger::create` and
   `Ledger::open` keep the ledger in a file that is its JSON Lines export,
@@ -102,8 +102,10 @@ independent model).
   ledger on restart. `Floodwall::resume` replays the ledger on a newly
   built plane and checks every record comes out the same; every intent
   that gets into the queue is recorded (`queued`).
-- **FW-403** Property test: replay(record-stream) reproduces the live
-  decisions.
+- **FW-403** ✓ Property test: replay(record-stream) reproduces the live
+  decisions. `tests/replay_property.rs`: random floods, replayed whole and
+  restarted at random points (from exports, from files, and after crashes
+  that cut a tick short), and a changed decision caught at its record.
 - **FW-404** ✓ *(new)* Record the tick on every ledger record. Conflict
   windows and hold TTLs depend on time, so replay needs it. `Record::tick`,
   record encoding v3, and a ledger clock that never goes back.
