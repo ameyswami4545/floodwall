@@ -5,9 +5,10 @@ Task ids refer to [GOALS.md](GOALS.md).
 ## Current state
 
 v0.3 is done: the ledger can be trusted, and audited, by someone who does
-not trust whoever holds it. v0.4 has begun: the ledger can be kept on
-disk (FW-401), and every record carries the tick it was written at
-(FW-404). An `Intent` flows through `Admission`
+not trust whoever holds it. v0.4 is well under way: the ledger can be
+kept on disk (FW-401), every record carries the tick it was written at
+(FW-404), and a restarted plane picks up exactly where it left off by
+replaying its ledger (FW-402, FW-405). An `Intent` flows through `Admission`
 (per-agent token bucket + bounded priority queue with backpressure) into
 the scheduler, which starts only what may run now: a `Global` change
 alone, `Region` changes one at a time with their resource to themselves,
@@ -39,7 +40,7 @@ of its own, checks it from genesis, and discards only a last line a crash
 left unfinished; any other bad line is refused and the file left alone.
 
 Still zero dependencies (SHA-256, SHA-512, Ed25519 and the JSON reader are
-from scratch) and pinned to Rust 1.95. 202 unit tests, 11 doctests
+from scratch) and pinned to Rust 1.95. 211 unit tests, 12 doctests
 (including the README examples), a randomized invariant test (300 seeded
 floods plus 6 signed ones, each ending in checkpoint audits), an edge-case
 export fixture that is also kept on disk, and 18 tamper tests of the
@@ -50,6 +51,11 @@ GitHub Pages) describes the scheduler and hold queue.
 
 ## Recently shipped
 
+- **FW-402, FW-405** - `Floodwall::resume` rebuilds a plane from its ledger
+  by replaying it, checking every record comes out the same: the queue,
+  rate-limit buckets, in-flight work, conflict claims, held intents and
+  pending releases all come back. Accepted intents are recorded
+  (`queued`).
 - **FW-404** - every ledger record carries the logical tick it was written
   at (record encoding v3), and ticks never go back along the chain.
 - **FW-401** - a durable, append-only ledger on disk: `Ledger::create` and
@@ -72,18 +78,21 @@ GitHub Pages) describes the scheduler and hold queue.
 
 ## Next up
 
-- **v0.4 persistence + replay** - FW-402, FW-403 and FW-405: rebuilding
-  admission, scheduler and hold state from a reopened ledger (FW-402,
-  FW-405), so a restarted plane can carry on where it stopped, and a
-  replay property test (FW-403).
+- **v0.4 persistence + replay** - FW-403: a property test that replaying
+  the record stream reproduces the live decisions, over random floods and
+  restarts.
 
 ## Known gaps
 
-- A plane cannot resume from a reopened ledger yet: `Floodwall::with_ledger`
-  still needs an empty ledger, because the plane's state (queue, in-flight
-  and held intents, rate buckets) is not rebuilt from the records until
-  FW-402 and FW-405. A reopened ledger can be audited, exported and
-  appended to directly.
+- Resuming needs the plane built exactly as before; the configuration is
+  not in the ledger. A difference that changes a decision is caught at the
+  first record that comes out differently, but one that changes nothing
+  yet is not, and takes effect from the restart on. A plane that started
+  from an `Admission` that already held intents cannot be resumed, since
+  their arrival is not in its ledger.
+- After a restart the clock is the last record's tick: a call that
+  recorded nothing (a pass that ruled on nothing) may have moved it
+  further, which only matters if the caller then goes back in time.
 - The ledger file's lock is advisory on Unix (`flock`), so it binds other
   floodwall processes, not programs that ignore it. On Windows it is
   mandatory and also keeps other programs from reading the file while it

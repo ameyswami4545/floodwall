@@ -66,6 +66,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A plane picks up where it left off after a restart (FW-402, FW-405).
+  `Floodwall::resume(ledger)` replays a plane's ledger on a newly built
+  plane with the same configuration: it makes the same calls at the same
+  ticks and checks each one writes exactly the record the ledger holds,
+  so the queue and its order, every agent's rate-limit bucket, what is in
+  flight and since when, every conflict claim, what is held and why, and
+  pending releases all come back as they were. A plane built differently,
+  or a ledger holding a decision the plane would not have made, is refused
+  with `ResumeError::Diverged` at the first record that comes out
+  differently (saying what differs); records no plane writes are
+  `ResumeError::Unreplayable`. A tick a crash cut short is finished.
+  Signatures are not checked again, so a rotated key does not stop a
+  restart.
+  - **Breaking:** every intent that gets into the queue is now recorded,
+    as `queued` (`QUEUED`), and synced before `submit` returns, so an
+    accepted intent is not lost if the plane stops before ruling on it.
+    Ledgers have one more record per accepted intent.
+  - A rate-limited attempt no longer changes the agent's bucket: the
+    refill is only kept with the token it pays for, so a bucket depends
+    only on the intents that got in (which the ledger records), and is the
+    same floating-point sum however many attempts came between.
+  - `Floodwall::with_ledger` points to `resume` for a ledger with records.
+  - The demo's `--ledger FILE` restarts the plane from its file halfway
+    through the flood; CI checks the ledger is the same bytes as a run
+    without the restart.
 - **Breaking:** every ledger record carries the logical tick it was
   written at (FW-404): `Record::tick`, covered by the digest under record
   encoding `floodwall/ledger/record/v3` (the tick follows `seq`). The
