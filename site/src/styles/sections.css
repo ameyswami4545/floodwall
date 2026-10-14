@@ -14,8 +14,8 @@ main {
 }
 
 /* ---------------------------------------------------------------- Cards
- * Every card follows the same rhythm, top-aligned: label, 16px, title,
- * 8px, body. Cards in a row stretch to equal height; extra space falls
+ * Every card follows the same rhythm, top-aligned: label, 24px, title,
+ * 12px, body (a label-only card goes label, 24px, body). Cards in a row stretch to equal height; extra space falls
  * below the content, never between its parts. */
 
 .tag {
@@ -55,7 +55,7 @@ main {
 .model-stage {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
   padding: var(--card-padding);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(232, 242, 248, 0.62)),
@@ -294,7 +294,7 @@ main {
 }
 
 .roadmap-card h3 {
-  margin: 16px 0 8px;
+  margin: 24px 0 12px;
   color: var(--ink);
   font-size: var(--text-title);
   font-weight: 600;

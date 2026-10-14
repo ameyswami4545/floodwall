@@ -71,10 +71,11 @@ export function useActiveSection(ids: readonly string[]) {
 }
 
 /**
- * Scroll in-page links (#model, #gate, ...) so the target section sits in
- * the middle of the space below the site header. A section taller than
- * that space lines up under the header instead, so its top is never cut
- * off. Also re-centers a section named in the URL on first load.
+ * Scroll in-page links (#model, #gate, ...) so the target section's content
+ * (its box minus vertical padding) sits in the middle of the space below the
+ * site header. Content taller than that space starts just under the header.
+ * The previous section is never pulled into view past its own empty bottom
+ * padding. Also re-centers a section named in the URL on first load.
  */
 export function useCenteredSectionLinks() {
   useEffect(() => {
@@ -87,8 +88,17 @@ export function useCenteredSectionLinks() {
       const header = document.querySelector<HTMLElement>(".site-header")?.offsetHeight ?? 0;
       const room = window.innerHeight - header;
       const { top, height } = target.getBoundingClientRect();
-      const centering = height < room ? (room - height) / 2 : 0;
-      window.scrollTo({ top: window.scrollY + top - header - centering, behavior });
+      const style = getComputedStyle(target);
+      const paddingTop = parseFloat(style.paddingTop);
+      const content = height - paddingTop - parseFloat(style.paddingBottom);
+
+      // Where the section's top edge should land, in viewport pixels.
+      const gapAbove = content < room ? (room - content) / 2 : Math.min(paddingTop, 24);
+      const previous = target.previousElementSibling;
+      const revealable = previous ? parseFloat(getComputedStyle(previous).paddingBottom) : 0;
+      const landing = Math.min(header + gapAbove - paddingTop, header + revealable);
+
+      window.scrollTo({ top: window.scrollY + top - landing, behavior });
 
       // Move keyboard focus along with the view, as a native jump would.
       if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
