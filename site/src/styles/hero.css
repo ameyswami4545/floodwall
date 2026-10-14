@@ -333,3 +333,13 @@
     font-size: var(--text-lg);
   }
 }
+
+@media (max-width: 360px) {
+  .hero-stats div {
+    padding-inline: 8px;
+  }
+
+  .hero-stats dt {
+    letter-spacing: 0;
+  }
+}

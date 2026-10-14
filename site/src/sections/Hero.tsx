@@ -1,6 +1,6 @@
 import { HERO_VIDEO_URL, REPO_URL } from "../content";
 import { useVideoEligibility } from "../hooks";
-import { AmbientVideo } from "./AmbientVideo";
+import { AmbientVideo } from "../components/AmbientVideo";
 
 const CRATE_STATS = [
   { value: __CRATE_STATS__.version, label: "shipped" },

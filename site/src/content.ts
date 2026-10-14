@@ -39,12 +39,42 @@ export const MODEL_STAGES = [
 
 export type Verdict = "admit" | "defer" | "reject";
 
+/** The reference policies in src/policy.rs and the verdict each one hands down. */
+export const GATE_POLICIES: { name: string; rule: string; verdict: Verdict }[] = [
+  {
+    name: "no-global-destroy",
+    rule: "Destructive global changes need human sign-off.",
+    verdict: "reject",
+  },
+  {
+    name: "blast-needs-priority",
+    rule: "The wider the blast radius, the more urgent a change must be.",
+    verdict: "reject",
+  },
+  {
+    name: "resource-allowlist",
+    rule: "Resources off the list wait on hold for a human.",
+    verdict: "defer",
+  },
+];
+
+export const LEDGER_FACTS = [
+  "SHA-256 hash chain: each record folds in the previous digest.",
+  "With a keyring, Ed25519 signatures prove which agent asked for what.",
+  "verify() replays the chain; verify_signatures() checks every signer.",
+];
+
 export const LEDGER_ENTRIES: { verdict: Verdict; agent: string; intent: string }[] = [
   { verdict: "admit", agent: "reconciler-7", intent: "scale web" },
   { verdict: "defer", agent: "deployer", intent: "billing off allowlist" },
   { verdict: "reject", agent: "chaos-loop", intent: "global destroy" },
   { verdict: "admit", agent: "autoscaler", intent: "cache replicas" },
+  { verdict: "reject", agent: "cost-bot", intent: "bulk region drain" },
+  { verdict: "admit", agent: "migrator", intent: "api schema v12" },
 ];
+
+/** Head digest from the README's demo run, shortened for display. */
+export const LEDGER_HEAD_DIGEST = "189f5d55…0f84c3ca";
 
 export const ROADMAP = [
   {

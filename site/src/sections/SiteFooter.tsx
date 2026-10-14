@@ -1,7 +1,7 @@
 import { FOOTER_GROUPS, FOOTER_POSTER_URL, HERO_VIDEO_URL, PROTO_URL } from "../content";
 import { useVideoEligibility } from "../hooks";
-import { AmbientVideo } from "./AmbientVideo";
-import { BrandMark } from "./BrandMark";
+import { AmbientVideo } from "../components/AmbientVideo";
+import { BrandMark } from "../components/BrandMark";
 
 export function SiteFooter() {
   const canPlayVideo = useVideoEligibility();

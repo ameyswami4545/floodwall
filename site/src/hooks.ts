@@ -39,9 +39,9 @@ export function useIsScrolled() {
 }
 
 /**
- * The id of the section crossing a band in the upper third of the
- * viewport. When two sections share that band (Gate and Ledger sit side by
- * side on wide screens) the earlier one in `ids` wins. `ids` must be stable.
+ * The id of the section crossing the middle of the viewport, which is where
+ * useCenteredSectionLinks puts a section. If two ever share it, the earlier
+ * one in `ids` wins. `ids` must be stable.
  */
 export function useActiveSection(ids: readonly string[]) {
   const [active, setActive] = useState(ids[0]);
@@ -57,7 +57,7 @@ export function useActiveSection(ids: readonly string[]) {
         const first = ids.find((id) => crossing.has(id));
         if (first) setActive(first);
       },
-      { rootMargin: "-25% 0px -70% 0px" },
+      { rootMargin: "-50% 0px -49% 0px" },
     );
 
     for (const id of ids) {
@@ -68,4 +68,48 @@ export function useActiveSection(ids: readonly string[]) {
   }, [ids]);
 
   return active;
+}
+
+/**
+ * Scroll in-page links (#model, #gate, ...) so the target section sits in
+ * the middle of the space below the site header. A section taller than
+ * that space lines up under the header instead, so its top is never cut
+ * off. Also re-centers a section named in the URL on first load.
+ */
+export function useCenteredSectionLinks() {
+  useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    const scrollToSection = (id: string, behavior: ScrollBehavior) => {
+      const target = id ? document.getElementById(id) : null;
+      if (!target) return false;
+
+      const header = document.querySelector<HTMLElement>(".site-header")?.offsetHeight ?? 0;
+      const room = window.innerHeight - header;
+      const { top, height } = target.getBoundingClientRect();
+      const centering = height < room ? (room - height) / 2 : 0;
+      window.scrollTo({ top: window.scrollY + top - header - centering, behavior });
+
+      // Move keyboard focus along with the view, as a native jump would.
+      if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+      target.focus({ preventScroll: true });
+      return true;
+    };
+
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href^="#"]');
+      const id = decodeURIComponent(link?.getAttribute("href")?.slice(1) ?? "");
+      if (!scrollToSection(id, reducedMotion.matches ? "auto" : "smooth")) return;
+
+      event.preventDefault();
+      if (location.hash !== `#${id}`) history.pushState(null, "", `#${id}`);
+    };
+
+    document.addEventListener("click", onClick);
+    const initial = decodeURIComponent(location.hash.slice(1));
+    if (initial) void document.fonts.ready.then(() => scrollToSection(initial, "auto"));
+    return () => document.removeEventListener("click", onClick);
+  }, []);
 }

@@ -1,16 +1,23 @@
-import { Hero } from "./components/Hero";
-import { GateLedgerSection, ModelSection, RoadmapSection } from "./components/Sections";
-import { SiteFooter } from "./components/SiteFooter";
-import { SiteHeader } from "./components/SiteHeader";
+import { useCenteredSectionLinks } from "./hooks";
+import { GateSection } from "./sections/GateSection";
+import { Hero } from "./sections/Hero";
+import { LedgerSection } from "./sections/LedgerSection";
+import { ModelSection } from "./sections/ModelSection";
+import { RoadmapSection } from "./sections/RoadmapSection";
+import { SiteFooter } from "./sections/SiteFooter";
+import { SiteHeader } from "./sections/SiteHeader";
 
 export default function App() {
+  useCenteredSectionLinks();
+
   return (
     <>
       <SiteHeader />
       <main>
         <Hero />
         <ModelSection />
-        <GateLedgerSection />
+        <GateSection />
+        <LedgerSection />
         <RoadmapSection />
       </main>
       <SiteFooter />

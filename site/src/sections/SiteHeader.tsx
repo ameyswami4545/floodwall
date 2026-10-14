@@ -1,6 +1,6 @@
 import { NAV_SECTIONS, NAV_SECTION_IDS, REPO_URL } from "../content";
 import { useActiveSection, useIsScrolled } from "../hooks";
-import { BrandMark } from "./BrandMark";
+import { BrandMark } from "../components/BrandMark";
 
 export function SiteHeader() {
   const scrolled = useIsScrolled();
