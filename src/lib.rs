@@ -642,7 +642,11 @@ impl Floodwall {
         reason: Option<String>,
         policies: Vec<(String, String)>,
     ) {
-        self.ledger.advance_clock(self.clock);
+        let tick = self.ledger.advance_clock(self.clock);
+        debug_assert_eq!(
+            tick, self.clock,
+            "the ledger's clock ran ahead of the plane's"
+        );
         if let Err(e) = self
             .ledger
             .write_intent(intent, label, reason, policies, false)
@@ -699,18 +703,25 @@ impl Floodwall {
     /// [`Ledger::with_signer`]). A ledger on disk ([`Ledger::create`]) keeps
     /// every decision durably (see [Durability](Floodwall#durability)).
     ///
+    /// The plane and its ledger keep one clock, so each record carries the
+    /// tick the plane acted at: adopting `ledger` moves whichever clock is
+    /// behind up to the other ([`Floodwall::clock`],
+    /// [`Ledger::clock`](crate::Ledger::clock)).
+    ///
     /// # Panics
     ///
     /// Panics if `ledger` already has records, or this plane has already
     /// recorded something: a ledger is one plane's history from the start.
     /// To carry on from a ledger that has records, use
     /// [`Floodwall::resume`].
-    pub fn with_ledger(mut self, ledger: Ledger) -> Self {
+    pub fn with_ledger(mut self, mut ledger: Ledger) -> Self {
         assert!(
             ledger.is_empty() && self.ledger.is_empty(),
             "with_ledger needs an empty ledger and a plane that has not recorded anything; \
              use Floodwall::resume to carry on from a ledger with records"
         );
+        let clock = self.advance(ledger.clock());
+        ledger.advance_clock(clock);
         self.ledger = ledger;
         self
     }
@@ -1489,6 +1500,34 @@ mod tests {
         q.expire(&off_list(4).key(), "bob", 1).unwrap();
         let ticks: Vec<u64> = q.ledger().records().iter().map(|r| r.tick).collect();
         assert_eq!(ticks, [20, 20, 20]);
+    }
+
+    #[test]
+    fn a_plane_and_its_ledger_keep_one_clock() {
+        // Review repro on #17: a ledger whose clock is ahead of the plane's.
+        // The plane catches up to it, so the decision, the dispatch and the
+        // record all happen at 100, not 5.
+        let mut ahead = Ledger::new();
+        ahead.advance_clock(100);
+        let mut p = plane().with_ledger(ahead);
+        assert_eq!((p.clock(), p.ledger().clock()), (100, 100));
+        p.submit(scale(1, "web"), 5).unwrap();
+        let report = p.tick(5);
+        assert!(report.decisions[0].verdict.is_admit());
+        assert_eq!(p.in_flight().next().unwrap().since, 100);
+        assert!(!p.ledger().is_empty());
+        assert!(p.ledger().records().iter().all(|r| r.tick == 100));
+        assert!(p.ledger().verify());
+        // A plane whose clock is ahead (its admission has seen tick 20)
+        // brings a new ledger up to it at once.
+        let mut admission = Admission::new(16, RateLimit::new(8.0, 1.0));
+        admission.prune_idle(20);
+        let mut q = Floodwall::new(admission, Gate::new()).with_ledger(Ledger::new());
+        assert_eq!((q.clock(), q.ledger().clock()), (20, 20));
+        q.submit(scale(2, "api"), 5).unwrap();
+        q.tick(5);
+        assert_eq!(q.in_flight().next().unwrap().since, 20);
+        assert!(q.ledger().records().iter().all(|r| r.tick == 20));
     }
 
     #[test]
