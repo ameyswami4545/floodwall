@@ -39,7 +39,7 @@ of its own, checks it from genesis, and discards only a last line a crash
 left unfinished; any other bad line is refused and the file left alone.
 
 Still zero dependencies (SHA-256, SHA-512, Ed25519 and the JSON reader are
-from scratch) and pinned to Rust 1.95. 202 unit tests, 11 doctests
+from scratch) and pinned to Rust 1.95. 203 unit tests, 11 doctests
 (including the README examples), a randomized invariant test (300 seeded
 floods plus 6 signed ones, each ending in checkpoint audits), an edge-case
 export fixture that is also kept on disk, and 18 tamper tests of the

@@ -72,7 +72,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ledger keeps a clock that only moves forward (`Ledger::clock`,
   `Ledger::advance_clock`); a `Floodwall` keeps it at the plane's own
   clock, so every decision, release, expiry and outcome shows when it
-  happened. `Ledger::verify`, `Ledger::open` and `Ledger::read_jsonl`
+  happened. `Floodwall::with_ledger` brings whichever of the two clocks is
+  behind up to the other, so they never disagree. `Ledger::verify`, `Ledger::open` and `Ledger::read_jsonl`
   refuse a record whose tick is earlier than the one before it. The JSON
   Lines export writes `"tick"` as a decimal string after `"seq"` (a tick
   can exceed 2^53) and names record encoding v3 in its header;
