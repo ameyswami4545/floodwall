@@ -56,6 +56,13 @@
 //! its byte offset, and the file is left as it is. Truncating the file to
 //! that offset keeps everything before the bad line.
 //!
+//! What opening checks is the bytes it reads. A process that stopped
+//! between writing lines and syncing them may have left them only in the
+//! operating system's cache, where `open` reads them like any other; so it
+//! syncs the file before returning, and the ledger it returns is on disk.
+//! A write that never reached the file at all is simply not there: it was
+//! never synced, so nothing was reported about it.
+//!
 //! # One writer
 //!
 //! Opening a ledger file locks it, until the [`Ledger`] is dropped, so a
@@ -252,6 +259,11 @@ impl Ledger {
     /// [Crashes](crate::durable#crashes)). The file stays locked until the
     /// ledger is dropped.
     ///
+    /// Before it returns, the file is synced, so everything the ledger was
+    /// read from is on disk: lines a process wrote but stopped before
+    /// syncing may have been only in the operating system's cache, and a
+    /// plane resumed from this ledger builds on them.
+    ///
     /// Fails with [`ReadError::InUse`] if another ledger has the file open,
     /// and [`ReadError::Invalid`] if a complete line is not what floodwall
     /// writes or does not verify, in which case the file is not changed. An
@@ -281,8 +293,11 @@ impl Ledger {
         }
         let mut ledger = load(lines)?;
         if !unfinished.is_empty() {
-            truncate(&mut file, complete as u64)?;
+            file.set_len(complete as u64)?;
         }
+        // What was just read may not all be on disk yet: make it so before
+        // anything builds on it.
+        file.sync_all()?;
         file.seek(SeekFrom::End(0))?;
         ledger.attach(Storage::new(
             Box::new(file),
