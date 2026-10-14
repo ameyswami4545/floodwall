@@ -239,6 +239,10 @@ pub struct Floodwall {
     keyring: Option<Keyring>,
     /// Live intents already checked against the current keyring.
     authenticated: HashSet<IntentKey>,
+    /// While [`Floodwall::resume`] replays a pass: for each intent the
+    /// ledger shows that pass ruling on, whether its signature check
+    /// passed (see [`crate::replay`]).
+    replayed_checks: Option<HashMap<IntentKey, bool>>,
     clock: u64,
 }
 
@@ -285,6 +289,7 @@ impl Floodwall {
             live,
             keyring: None,
             authenticated: HashSet::new(),
+            replayed_checks: None,
         })
     }
 
@@ -468,16 +473,28 @@ impl Floodwall {
         let key = intent.key();
         let GateDecision { mut breakdown, .. } = self.gate.evaluate(&intent);
         if let Some(keyring) = &self.keyring {
-            let signature = if self.authenticated.contains(&key) {
-                Verdict::Admit
-            } else {
-                match keyring.authenticate(&intent) {
+            let replayed = self
+                .replayed_checks
+                .as_ref()
+                .and_then(|checks| checks.get(&key).copied());
+            let signature = match replayed {
+                // Replaying a check the ledger shows passing: resume has
+                // verified every signature in it already.
+                Some(true) => Verdict::Admit,
+                // Replaying one it shows failing: it must fail against this
+                // keyring too, or the replay diverges.
+                Some(false) => match keyring.authenticate(&intent) {
+                    Ok(()) => Verdict::Admit,
+                    Err(e) => Verdict::Reject(e.to_string()),
+                },
+                None if self.authenticated.contains(&key) => Verdict::Admit,
+                None => match keyring.authenticate(&intent) {
                     Ok(()) => {
                         self.authenticated.insert(key.clone());
                         Verdict::Admit
                     }
                     Err(e) => Verdict::Reject(e.to_string()),
-                }
+                },
             };
             breakdown.push((SIGNATURE_CHECK.to_string(), signature));
         }

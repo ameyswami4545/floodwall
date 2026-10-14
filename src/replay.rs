@@ -58,9 +58,33 @@
 //! is not, and takes effect from then on, as if the plane had been
 //! reconfigured at the restart.
 //!
-//! Signatures are not checked again while replaying: each intent was
-//! checked when it was first submitted, and an agent may have rotated its
-//! key since (use [`Ledger::verify_signatures`] to audit them).
+//! # Signatures
+//!
+//! A ledger that verifies is only a chain of consistent hashes, which
+//! anyone can compute. So a plane with a keyring first checks that every
+//! intent in the ledger was signed by its agent, with its current key or a
+//! retired one ([`Keyring::audit_keys`](crate::Keyring::audit_keys)), and
+//! refuses the ledger otherwise, with [`ResumeError::Unauthenticated`]. A
+//! plane without a keyring checks no signatures, as it would not for a new
+//! submission either.
+//!
+//! A retired key only vouches for history, never for new work. Once
+//! resumed, every pending intent (queued, or released back into the queue)
+//! is checked against the current keyring when it is next ruled on, as
+//! after [`Floodwall::with_keyring`], so one still pending when its agent's
+//! key was rotated is rejected. That rejection is in the ledger, and a
+//! later replay must reproduce it, but the restart that made the check
+//! happen is not; so while replaying, a signature check comes out as the
+//! ledger shows when it passed (every signature has just been checked),
+//! and when it failed, it must fail against the current keyring too.
+//!
+//! What this establishes is that the agents asked for what the ledger
+//! says, and that this plane, so configured, makes the decisions it shows.
+//! It does not establish who wrote the file: check the ledger's signed
+//! checkpoints against the plane's own key for that
+//! ([`Ledger::verify_checkpoint_signatures`]). Nor can a retired key's
+//! records be dated to before its retirement, since the keyring does not
+//! know when that was.
 //!
 //! # Crashes
 //!
@@ -100,11 +124,13 @@
 //!
 //! [`Admission`]: crate::Admission
 
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::intent::{Intent, IntentKey};
-use crate::ledger::{Ledger, Record};
-use crate::{Floodwall, Outcome, QUEUED};
+use crate::keyring::Keyring;
+use crate::ledger::{Digest, Ledger, Record, SignatureError, SignatureProblem};
+use crate::{Floodwall, Outcome, QUEUED, SIGNATURE_CHECK};
 
 /// Why [`Floodwall::resume`] could not pick up from a ledger.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,6 +140,10 @@ pub enum ResumeError {
     NotFresh,
     /// The ledger does not verify ([`Ledger::verify`]).
     Unverified,
+    /// The plane has a keyring, and this record's intent is not signed by
+    /// its agent's current key or a retired one (see
+    /// [Signatures](crate::replay#signatures)).
+    Unauthenticated(SignatureError),
     /// Record `seq` is not one a plane writes, so there is nothing to
     /// replay it with.
     Unreplayable {
@@ -142,6 +172,9 @@ impl fmt::Display for ResumeError {
                 "the plane has already queued or recorded something; resume a newly built plane",
             ),
             ResumeError::Unverified => f.write_str("the ledger does not verify"),
+            ResumeError::Unauthenticated(e) => {
+                write!(f, "the ledger's history is not authenticated: {e}")
+            }
             ResumeError::Unreplayable { seq, why } => {
                 write!(f, "record {seq} cannot be replayed: {why}")
             }
@@ -159,6 +192,58 @@ impl fmt::Display for ResumeError {
 }
 
 impl std::error::Error for ResumeError {}
+
+/// Check that every intent in `ledger` is signed by its agent, with a key
+/// `keyring` holds for it, current or retired. Each intent is checked once,
+/// however many records carry it. Records not about an intent are left to
+/// the replay, which refuses them.
+fn authenticate(ledger: &Ledger, keyring: &Keyring) -> Result<(), ResumeError> {
+    let mut checked: HashSet<(Digest, [u8; 64])> = HashSet::new();
+    for r in ledger.records() {
+        let Some(intent) = &r.intent else { continue };
+        let fail = |problem| {
+            Err(ResumeError::Unauthenticated(SignatureError {
+                seq: r.seq,
+                problem,
+            }))
+        };
+        let Some(signature) = intent.signature else {
+            return fail(SignatureProblem::Unsigned);
+        };
+        let digest = intent.digest();
+        if checked.contains(&(digest, signature.0)) {
+            continue;
+        }
+        let mut keys = keyring.audit_keys(&intent.agent).peekable();
+        if keys.peek().is_none() {
+            return fail(SignatureProblem::UnknownAgent);
+        }
+        if !keys.any(|key| key.verify(digest.as_bytes(), &signature)) {
+            return fail(SignatureProblem::BadSignature);
+        }
+        checked.insert((digest, signature.0));
+    }
+    Ok(())
+}
+
+/// For the pass at `tick` whose records start `records`: whether each
+/// intent it ruled on passed its signature check, as the ledger shows.
+fn checks_at(records: &[Record], tick: u64) -> HashMap<IntentKey, bool> {
+    let mut checks = HashMap::new();
+    for r in records.iter().take_while(|r| r.tick == tick) {
+        let (Some(intent), "admit" | "defer" | "reject") = (&r.intent, r.verdict.as_str()) else {
+            continue;
+        };
+        let passed = r
+            .evidence
+            .policies
+            .iter()
+            .any(|(name, label)| name == SIGNATURE_CHECK && label == "admit");
+        // The first ruling on an intent from here on is this pass's.
+        checks.entry(intent.key()).or_insert(passed);
+    }
+    checks
+}
 
 /// A record, briefly, for [`ResumeError::Diverged`].
 fn describe(r: &Record) -> String {
@@ -223,9 +308,15 @@ impl Floodwall {
     /// the later of `now` and the last record's tick (see
     /// [The clock](crate::replay#the-clock)).
     ///
+    /// With a keyring, every intent in `ledger` must be signed by its agent
+    /// (current or retired key), and pending intents are checked again
+    /// against the current keyring when next ruled on (see
+    /// [Signatures](crate::replay#signatures)).
+    ///
     /// Fails with [`ResumeError::NotFresh`] if this plane has queued or
     /// recorded anything, [`ResumeError::Unverified`] if `ledger` does not
-    /// verify, and [`ResumeError::Unreplayable`] or
+    /// verify, [`ResumeError::Unauthenticated`] if an intent in it is not
+    /// its agent's, and [`ResumeError::Unreplayable`] or
     /// [`ResumeError::Diverged`] at the first record the replay cannot
     /// reproduce.
     ///
@@ -246,14 +337,21 @@ impl Floodwall {
         if !ledger.verify() {
             return Err(ResumeError::Unverified);
         }
+        if let Some(keyring) = &self.keyring {
+            authenticate(&ledger, keyring)?;
+        }
         // Replay into a ledger of our own, then compare.
         self.ledger = Ledger::new();
         let stored = ledger.records();
         let mut next = 0;
         while let Some(record) = stored.get(next) {
             let call = self.call_for(record)?;
+            if matches!(call, Call::Tick) {
+                self.replayed_checks = Some(checks_at(&stored[next..], record.tick));
+            }
             let written = self.ledger.len();
             let refused = self.replay(call, record.tick);
+            self.replayed_checks = None;
             let replayed = &self.ledger.records()[written..];
             if replayed.is_empty() {
                 return Err(ResumeError::Diverged {
@@ -293,8 +391,14 @@ impl Floodwall {
             crate::ledger::write_failed(e);
         }
         debug_assert_eq!(ledger.head(), self.ledger.head());
+        // Pending intents are checked against the current keyring when next
+        // ruled on: what vouched for them in the past is not permission now.
+        self.authenticated.clear();
+        // One clock for the plane and its ledger, which may have been moved
+        // past its last record.
+        let clock = self.advance(now.max(ledger.clock()));
+        ledger.advance_clock(clock);
         self.ledger = ledger;
-        self.advance(now);
         Ok(self)
     }
 
@@ -520,15 +624,13 @@ mod tests {
         }
     }
 
-    /// Everything about a plane its methods show.
+    /// Everything about a plane its methods show: its clock, its queue,
+    /// what is in flight and what is held (whole intents, with their
+    /// signatures), and its ledger.
     fn state(p: &Floodwall) -> String {
-        let queued: Vec<IntentKey> = p.queued().map(Intent::key).collect();
-        let in_flight: Vec<(IntentKey, u64)> =
-            p.in_flight().map(|f| (f.intent.key(), f.since)).collect();
-        let held: Vec<(IntentKey, u64, String)> = p
-            .held()
-            .map(|h| (h.intent.key(), h.since, h.reason.clone()))
-            .collect();
+        let queued: Vec<&Intent> = p.queued().collect();
+        let in_flight: Vec<(&Intent, u64)> = p.in_flight().map(|f| (&f.intent, f.since)).collect();
+        let held: Vec<&crate::Held> = p.held().collect();
         format!(
             "clock {} queued {queued:?} in flight {in_flight:?} held {held:?} head {}",
             p.clock(),
@@ -886,6 +988,171 @@ mod tests {
             ResumeError::NotFresh.to_string(),
             "the plane has already queued or recorded something; resume a newly built plane"
         );
+    }
+
+    /// "a" has rotated to a new key; the old one is kept for audits.
+    fn rotated() -> Keyring {
+        Keyring::new()
+            .with("a", SigningKey::from_seed(&[42; 32]).verifying_key())
+            .with("b", key("b").verifying_key())
+            .with_retired("a", key("a").verifying_key())
+    }
+
+    #[test]
+    fn a_keyed_plane_only_replays_history_its_agents_signed() {
+        // Review repro on #18: a ledger anyone could write, holding an
+        // unsigned Global destroy, consistent hashes and all.
+        let unsigned = Intent::new(
+            9,
+            AgentId::new("a"),
+            Action::Destroy {
+                resource: "web".into(),
+            },
+            Priority::Pager,
+            BlastRadius::Global,
+        );
+        let mut forged = Ledger::new();
+        forged.append_intent(&unsigned, QUEUED, None, vec![]);
+        assert!(forged.verify());
+        let unauthenticated = |seq, problem| {
+            Some(ResumeError::Unauthenticated(SignatureError {
+                seq,
+                problem,
+            }))
+        };
+        assert_eq!(
+            plane().resume(reread(&forged), 0).err(),
+            unauthenticated(0, SignatureProblem::Unsigned)
+        );
+        // Signed by another agent's key, or by an agent with no key.
+        let mut stolen = Ledger::new();
+        stolen.append_intent(&scale("a", 1, "web", 2), QUEUED, None, vec![]);
+        stolen.append_intent(&unsigned.clone().signed(&key("b")), QUEUED, None, vec![]);
+        assert_eq!(
+            plane().resume(reread(&stolen), 0).err(),
+            unauthenticated(1, SignatureProblem::BadSignature)
+        );
+        let mut stranger = Ledger::new();
+        let z = Intent::new(
+            1,
+            AgentId::new("z"),
+            Action::Destroy {
+                resource: "web".into(),
+            },
+            Priority::Normal,
+            BlastRadius::Cell,
+        )
+        .signed(&key("a"));
+        stranger.append_intent(&z, QUEUED, None, vec![]);
+        let err = refused(plane().resume(stranger, 0));
+        assert_eq!(
+            err,
+            unauthenticated(0, SignatureProblem::UnknownAgent).unwrap()
+        );
+        assert_eq!(
+            err.to_string(),
+            "the ledger's history is not authenticated: record 0 names an agent with no key on the keyring"
+        );
+        // A plane built without a keyring checks no signatures, as it would
+        // not for a new submission: that is the caller's choice.
+        let unkeyed = Floodwall::new(Admission::new(6, RateLimit::new(3.0, 0.5)), Gate::new());
+        assert!(unkeyed.resume(forged, 0).is_ok());
+    }
+
+    #[test]
+    fn a_retired_key_never_authorizes_pending_work() {
+        // Review repro on #18: an intent signed with "a"'s old key is still
+        // queued when the key is rotated. Uninterrupted, the rotated plane
+        // rejects it; after a restart it must too.
+        let mut before = plane();
+        before.submit(scale("a", 1, "web", 2), 0).unwrap();
+        let ledger = reread(before.ledger());
+        let mut uninterrupted = before.with_keyring(rotated());
+        let mut resumed = plane().with_keyring(rotated()).resume(ledger, 0).unwrap();
+        for p in [&mut uninterrupted, &mut resumed] {
+            let report = p.tick(1);
+            assert!(matches!(report.decisions[0].verdict, Verdict::Reject(_)));
+            let check = report.decisions[0]
+                .breakdown
+                .iter()
+                .find(|(name, _)| name == SIGNATURE_CHECK);
+            assert!(matches!(check, Some((_, Verdict::Reject(_)))));
+        }
+        assert_eq!(state(&resumed), state(&uninterrupted));
+        // Held when the key is rotated, then released: the same.
+        let mut before = plane();
+        before.submit(scale("a", 2, "cache", 2), 0).unwrap(); // off the allowlist
+        before.tick(1);
+        assert_eq!(before.held().count(), 1);
+        let ledger = reread(before.ledger());
+        let mut uninterrupted = before.with_keyring(rotated());
+        let mut resumed = plane().with_keyring(rotated()).resume(ledger, 1).unwrap();
+        for p in [&mut uninterrupted, &mut resumed] {
+            p.release(&IntentKey::new("a", 2), "operator", 2).unwrap();
+            assert!(matches!(p.tick(3).decisions[0].verdict, Verdict::Reject(_)));
+        }
+        assert_eq!(state(&resumed), state(&uninterrupted));
+        // A second restart replays that rejection: the ledger shows the check
+        // failing, and it still fails against the current keyring.
+        let again = plane()
+            .with_keyring(rotated())
+            .resume(reread(resumed.ledger()), resumed.clock())
+            .unwrap();
+        assert_eq!(state(&again), state(&resumed));
+    }
+
+    #[test]
+    fn a_signature_check_the_ledger_shows_failing_must_fail() {
+        let mut p = plane();
+        p.submit(scale("a", 1, "web", 2), 0).unwrap();
+        p.tick(1);
+        let ledger = reread(p.ledger());
+        let at = ledger
+            .records()
+            .iter()
+            .position(|r| r.verdict == "admit")
+            .unwrap();
+        // The admit rewritten as a failed signature check, re-hashed. Its
+        // signature is good under the current keyring, so the replay says so.
+        let mut forged = Ledger::new();
+        for (n, r) in ledger.records().iter().enumerate() {
+            forged.advance_clock(r.tick);
+            let mut policies = r.evidence.policies.clone();
+            let (verdict, reason) = if n == at {
+                for (name, label) in &mut policies {
+                    if name == SIGNATURE_CHECK {
+                        *label = "reject".into();
+                    }
+                }
+                (
+                    "reject",
+                    Some("the signature is not the agent's signature of this intent".to_string()),
+                )
+            } else {
+                (r.verdict.as_str(), r.evidence.reason.clone())
+            };
+            forged.append_intent(r.intent.as_ref().unwrap(), verdict, reason, policies);
+        }
+        match refused(plane().resume(forged, 1)) {
+            ResumeError::Diverged { seq, found, .. } => {
+                assert_eq!(seq, at as u64);
+                assert!(found.starts_with("wrote `admit` for a#1"), "{found}");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_resumed_plane_shares_its_ledgers_clock() {
+        let mut p = plane();
+        p.submit(scale("a", 1, "web", 2), 3).unwrap();
+        let mut ledger = reread(p.ledger());
+        ledger.advance_clock(50);
+        let mut q = plane().resume(ledger, 10).unwrap();
+        assert_eq!((q.clock(), q.ledger().clock()), (50, 50));
+        q.tick(20);
+        assert!(q.ledger().records().iter().skip(1).all(|r| r.tick == 50));
+        assert_eq!(q.in_flight().next().unwrap().since, 50);
     }
 
     #[test]

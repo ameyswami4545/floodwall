@@ -77,8 +77,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with `ResumeError::Diverged` at the first record that comes out
   differently (saying what differs); records no plane writes are
   `ResumeError::Unreplayable`. A tick a crash cut short is finished.
-  Signatures are not checked again, so a rotated key does not stop a
-  restart. `now` is the tick the plane restarts at (the latest tick it
+  With a keyring, every intent in the ledger must be signed by its agent
+  (current or retired key), or resuming fails with
+  `ResumeError::Unauthenticated`: a ledger's hashes alone prove nothing
+  about who asked. Pending intents are checked again against the current
+  keyring when next ruled on, so a retired key never authorizes new work.
+  `now` is the tick the plane restarts at (the latest tick it
   was given, or later): a call that recorded nothing still moved the
   clock, which the ledger cannot show.
   - **Breaking:** every intent that gets into the queue is now recorded,
