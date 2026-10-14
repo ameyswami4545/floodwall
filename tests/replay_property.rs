@@ -34,7 +34,7 @@ use floodwall::intent::{Action, AgentId, BlastRadius, Intent, IntentKey, Priorit
 use floodwall::policy::{BlastNeedsPriority, NoGlobalDestroy, ResourceAllowlist};
 use floodwall::sha256::sha256;
 use floodwall::{
-    Admission, Floodwall, Gate, HoldConfig, Keyring, Ledger, Outcome, RateLimit, Record,
+    Admission, Floodwall, Gate, Held, HoldConfig, Keyring, Ledger, Outcome, RateLimit, Record,
     ResumeError, SchedulerConfig, SigningKey, QUEUED,
 };
 
@@ -203,15 +203,13 @@ fn random_intent(rng: &mut Rng, agent: &str, id: u64, signed: bool) -> Intent {
     intent.signed(&key_of(signer))
 }
 
-/// Everything the plane shows about itself.
+/// Everything the plane shows about itself: its clock, and its queue, what
+/// is in flight and what is held, as whole intents (action, priority, blast
+/// radius and signature included) with when and why.
 fn state(p: &Floodwall) -> String {
-    let queued: Vec<IntentKey> = p.queued().map(Intent::key).collect();
-    let in_flight: Vec<(IntentKey, u64)> =
-        p.in_flight().map(|f| (f.intent.key(), f.since)).collect();
-    let held: Vec<(IntentKey, u64, String)> = p
-        .held()
-        .map(|h| (h.intent.key(), h.since, h.reason.clone()))
-        .collect();
+    let queued: Vec<&Intent> = p.queued().collect();
+    let in_flight: Vec<(&Intent, u64)> = p.in_flight().map(|f| (&f.intent, f.since)).collect();
+    let held: Vec<&Held> = p.held().collect();
     format!(
         "clock {}\nqueued {queued:?}\nin flight {in_flight:?}\nheld {held:?}",
         p.clock()
