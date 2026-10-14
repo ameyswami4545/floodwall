@@ -41,7 +41,7 @@ of its own, checks it from genesis, and discards only a last line a crash
 left unfinished; any other bad line is refused and the file left alone.
 
 Still zero dependencies (SHA-256, SHA-512, Ed25519 and the JSON reader are
-from scratch) and pinned to Rust 1.95. 212 unit tests, 12 doctests
+from scratch) and pinned to Rust 1.95. 217 unit tests, 12 doctests
 (including the README examples), a randomized invariant test (300 seeded
 floods plus 6 signed ones, each ending in checkpoint audits), a replay
 property test (150 random floods plus 6 signed ones, with 300-odd
@@ -91,6 +91,9 @@ GitHub Pages) describes the scheduler and hold queue.
 
 ## Known gaps
 
+- Resuming establishes that the agents signed what the ledger says, and
+  that this plane makes the decisions it shows; not who wrote the file.
+  Check the ledger's signed checkpoints against the plane's key for that.
 - Resuming needs the plane built exactly as before; the configuration is
   not in the ledger. A difference that changes a decision is caught at the
   first record that comes out differently, but one that changes nothing
