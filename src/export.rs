@@ -65,14 +65,23 @@
 //! and signature, and that every record shows what its agent signed.
 //! `tools/verify-ledger.mjs` in the repository does so with nothing but
 //! Node's standard library.
+//!
+//! **Reading it back.** [`Ledger::read_jsonl`] reads a whole-ledger export
+//! back into a ledger, checking it from genesis. A ledger kept on disk
+//! ([`crate::durable`]) is this same file, written as it grows. Reading
+//! accepts exactly what this module writes, byte for byte: each line is
+//! written out again from what was read and must come out the same, so
+//! other spacing, key orders, escapes, number forms or duplicate keys are
+//! refused, and no line can mean two things to two readers.
 
 use std::io::{self, Write};
 
 use crate::checkpoint::Checkpoint;
-use crate::ed25519::VerifyingKey;
-use crate::intent::{Action, BlastRadius, Intent, Priority};
+use crate::ed25519::{Signature, VerifyingKey};
+use crate::intent::{Action, AgentId, BlastRadius, Intent, Priority};
+use crate::json::{self, Value};
 use crate::keyring::Keyring;
-use crate::ledger::{Digest, Ledger, Record};
+use crate::ledger::{Digest, Evidence, Ledger, Record};
 use crate::merkle::Frontier;
 
 /// The `format` named in the header.
@@ -105,7 +114,7 @@ fn json_opt_str(out: &mut String, s: Option<&str>) {
     }
 }
 
-fn header(from: u64) -> String {
+pub(crate) fn header(from: u64) -> String {
     format!(
         "{{\"type\":\"header\",\"format\":\"{FORMAT}\",\"version\":{VERSION},\"from\":{from},\
          \"hash\":\"sha256\",\"merkle\":\"rfc6962\",\
@@ -155,7 +164,7 @@ fn intent_json(s: &mut String, i: &Intent) {
     s.push('}');
 }
 
-fn record_line(r: &Record) -> String {
+pub(crate) fn record_line(r: &Record) -> String {
     let mut s = format!(
         "{{\"type\":\"record\",\"seq\":{},\"intent_id\":\"{}\",\"agent\":",
         r.seq, r.intent_id
@@ -190,7 +199,7 @@ fn record_line(r: &Record) -> String {
     s
 }
 
-fn checkpoint_line(c: &Checkpoint) -> String {
+pub(crate) fn checkpoint_line(c: &Checkpoint) -> String {
     let frontier: Vec<String> = c.frontier.iter().map(|d| format!("\"{d}\"")).collect();
     let mut s = format!(
         "{{\"type\":\"checkpoint\",\"size\":{},\"head\":\"{}\",\"root\":\"{}\",\"frontier\":[{}],\"signature\":",
@@ -305,6 +314,322 @@ pub fn keys_json(keyring: &Keyring, plane: Option<&VerifyingKey>) -> String {
     }
     s.push_str("}}");
     s
+}
+
+/// One line of an export, read back by [`read_line`].
+#[derive(Debug)]
+pub(crate) enum Line {
+    Header { from: u64 },
+    Record(Record),
+    Checkpoint(Checkpoint),
+}
+
+/// Read one line of an export (without its `\n`) back: a header, a record
+/// or a checkpoint, exactly as this module writes them. Anything else is
+/// refused, including JSON that means the same but is spelled differently
+/// (other spacing, key order, escapes or number forms), so a line can only
+/// ever be read one way. This checks the line's form; whether a record or
+/// checkpoint fits the ledger is checked by the caller.
+pub(crate) fn read_line(line: &str) -> Result<Line, String> {
+    let value = json::parse(line).map_err(|e| format!("not JSON this reader accepts: {e}"))?;
+    let kind = match &value {
+        Value::Object(fields) => match fields.first() {
+            Some((key, Value::String(kind))) if key == "type" => kind.as_str(),
+            _ => "",
+        },
+        _ => "",
+    };
+    let (read, written) = match kind {
+        "header" => {
+            let from = read_header(&value)?;
+            (Line::Header { from }, header(from))
+        }
+        "record" => {
+            let r = read_record(&value)?;
+            let written = record_line(&r);
+            (Line::Record(r), written)
+        }
+        "checkpoint" => {
+            let c = read_checkpoint(&value)?;
+            let written = checkpoint_line(&c);
+            (Line::Checkpoint(c), written)
+        }
+        _ => return Err("not a header, record or checkpoint line".into()),
+    };
+    if written != line {
+        return Err(
+            "the line is not written as floodwall writes it (spacing, key order, escapes or number forms)"
+                .into(),
+        );
+    }
+    Ok(read)
+}
+
+/// The values of an object that has exactly the fields `names`, in order.
+fn fields<'a>(value: &'a Value, names: &[&str], what: &str) -> Result<Vec<&'a Value>, String> {
+    let Value::Object(fields) = value else {
+        return Err(format!("{what} is {}, not an object", value.kind()));
+    };
+    if let Some((key, _)) = fields
+        .iter()
+        .find(|(key, _)| !names.contains(&key.as_str()))
+    {
+        return Err(format!("{what} has an unknown field {key:?}"));
+    }
+    if let Some(name) = names
+        .iter()
+        .find(|n| !fields.iter().any(|(key, _)| key == *n))
+    {
+        return Err(format!("{what} has no {name:?}"));
+    }
+    if !fields
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .eq(names.iter().copied())
+    {
+        return Err(format!(
+            "{what} does not have its fields in the documented order"
+        ));
+    }
+    Ok(fields.iter().map(|(_, v)| v).collect())
+}
+
+fn string<'a>(value: &'a Value, what: &str) -> Result<&'a str, String> {
+    match value {
+        Value::String(s) => Ok(s),
+        other => Err(format!("{what} is {}, not a string", other.kind())),
+    }
+}
+
+fn opt_string(value: &Value, what: &str) -> Result<Option<String>, String> {
+    match value {
+        Value::Null => Ok(None),
+        other => string(other, what).map(|s| Some(s.to_string())),
+    }
+}
+
+fn number(value: &Value, what: &str) -> Result<u64, String> {
+    match value {
+        Value::Number(n) => Ok(*n),
+        other => Err(format!("{what} is {}, not a number", other.kind())),
+    }
+}
+
+/// A `u64` written as a decimal string, the way `intent_id` is.
+fn decimal(value: &Value, what: &str) -> Result<u64, String> {
+    let s = string(value, what)?;
+    let canonical = s == "0" || (!s.starts_with('0') && s.bytes().all(|b| b.is_ascii_digit()));
+    match s.parse::<u64>() {
+        Ok(n) if canonical => Ok(n),
+        _ => Err(format!("{what} is not a u64 written as a decimal string")),
+    }
+}
+
+/// `N` bytes written as lowercase hex.
+fn hex<const N: usize>(value: &Value, what: &str) -> Result<[u8; N], String> {
+    let s = string(value, what)?;
+    let digit = |b: u8| match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        _ => None,
+    };
+    let mut out = [0u8; N];
+    if s.len() != 2 * N {
+        return Err(format!("{what} is not {N} bytes of lowercase hex"));
+    }
+    for (byte, pair) in out.iter_mut().zip(s.as_bytes().chunks(2)) {
+        match (digit(pair[0]), digit(pair[1])) {
+            (Some(hi), Some(lo)) => *byte = (hi << 4) | lo,
+            _ => return Err(format!("{what} is not {N} bytes of lowercase hex")),
+        }
+    }
+    Ok(out)
+}
+
+fn signature(value: &Value, what: &str) -> Result<Option<Signature>, String> {
+    match value {
+        Value::Null => Ok(None),
+        other => hex::<64>(other, what).map(|b| Some(Signature(b))),
+    }
+}
+
+fn read_header(value: &Value) -> Result<u64, String> {
+    let f = fields(
+        value,
+        &[
+            "type",
+            "format",
+            "version",
+            "from",
+            "hash",
+            "merkle",
+            "record_encoding",
+            "intent_encoding",
+            "checkpoint_encoding",
+        ],
+        "the header",
+    )?;
+    let format = string(f[1], "format")?;
+    let version = number(f[2], "version")?;
+    if format != FORMAT || version != VERSION {
+        return Err(format!("unsupported format {format:?} version {version}"));
+    }
+    let from = number(f[3], "from")?;
+    for (value, name, expected) in [
+        (f[4], "hash", "sha256"),
+        (f[5], "merkle", "rfc6962"),
+        (f[6], "record_encoding", "floodwall/ledger/record/v2"),
+        (f[7], "intent_encoding", "floodwall/intent/v1"),
+        (f[8], "checkpoint_encoding", "floodwall/checkpoint/v1"),
+    ] {
+        let got = string(value, name)?;
+        if got != expected {
+            return Err(format!("unsupported {name} {got:?}, not {expected:?}"));
+        }
+    }
+    Ok(from)
+}
+
+fn read_intent(value: &Value) -> Result<Intent, String> {
+    let f = fields(
+        value,
+        &[
+            "id",
+            "agent",
+            "action",
+            "priority",
+            "blast_radius",
+            "signature",
+        ],
+        "intent",
+    )?;
+    let kind = match f[2] {
+        Value::Object(fields) => match fields.first() {
+            Some((key, Value::String(kind))) if key == "kind" => kind.as_str(),
+            _ => "",
+        },
+        _ => "",
+    };
+    let action = match kind {
+        "apply" => {
+            let a = fields(f[2], &["kind", "resource", "manifest"], "intent.action")?;
+            Action::Apply {
+                resource: string(a[1], "intent.action.resource")?.to_string(),
+                manifest: string(a[2], "intent.action.manifest")?.to_string(),
+            }
+        }
+        "scale" => {
+            let a = fields(f[2], &["kind", "resource", "replicas"], "intent.action")?;
+            let replicas = number(a[2], "intent.action.replicas")?;
+            Action::Scale {
+                resource: string(a[1], "intent.action.resource")?.to_string(),
+                replicas: u32::try_from(replicas)
+                    .map_err(|_| "intent.action.replicas is not a u32".to_string())?,
+            }
+        }
+        "destroy" => {
+            let a = fields(f[2], &["kind", "resource"], "intent.action")?;
+            Action::Destroy {
+                resource: string(a[1], "intent.action.resource")?.to_string(),
+            }
+        }
+        _ => return Err("intent.action.kind is not \"apply\", \"scale\" or \"destroy\"".into()),
+    };
+    let priority = match string(f[3], "intent.priority")? {
+        "bulk" => Priority::Bulk,
+        "normal" => Priority::Normal,
+        "urgent" => Priority::Urgent,
+        "pager" => Priority::Pager,
+        _ => return Err("intent.priority is not bulk, normal, urgent or pager".into()),
+    };
+    let blast_radius = match string(f[4], "intent.blast_radius")? {
+        "cell" => BlastRadius::Cell,
+        "service" => BlastRadius::Service,
+        "region" => BlastRadius::Region,
+        "global" => BlastRadius::Global,
+        _ => return Err("intent.blast_radius is not cell, service, region or global".into()),
+    };
+    Ok(Intent {
+        id: decimal(f[0], "intent.id")?,
+        agent: AgentId::new(string(f[1], "intent.agent")?),
+        action,
+        priority,
+        blast_radius,
+        signature: signature(f[5], "intent.signature")?,
+    })
+}
+
+fn read_record(value: &Value) -> Result<Record, String> {
+    let f = fields(
+        value,
+        &[
+            "type",
+            "seq",
+            "intent_id",
+            "agent",
+            "verdict",
+            "action",
+            "reason",
+            "policies",
+            "intent",
+            "prev",
+            "digest",
+        ],
+        "the record",
+    )?;
+    let Value::Array(items) = f[7] else {
+        return Err(format!("policies is {}, not an array", f[7].kind()));
+    };
+    let policies = items
+        .iter()
+        .enumerate()
+        .map(|(n, item)| match item {
+            Value::Array(pair) if pair.len() == 2 => Ok((
+                string(&pair[0], &format!("policies[{n}][0]"))?.to_string(),
+                string(&pair[1], &format!("policies[{n}][1]"))?.to_string(),
+            )),
+            _ => Err(format!("policies[{n}] is not a [name, label] pair")),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(Record {
+        seq: number(f[1], "seq")?,
+        intent_id: decimal(f[2], "intent_id")?,
+        agent: string(f[3], "agent")?.to_string(),
+        verdict: string(f[4], "verdict")?.to_string(),
+        evidence: Evidence {
+            action: string(f[5], "action")?.to_string(),
+            reason: opt_string(f[6], "reason")?,
+            policies,
+        },
+        intent: match f[8] {
+            Value::Null => None,
+            other => Some(read_intent(other)?),
+        },
+        prev: Digest(hex(f[9], "prev")?),
+        digest: Digest(hex(f[10], "digest")?),
+    })
+}
+
+fn read_checkpoint(value: &Value) -> Result<Checkpoint, String> {
+    let f = fields(
+        value,
+        &["type", "size", "head", "root", "frontier", "signature"],
+        "the checkpoint",
+    )?;
+    let Value::Array(peaks) = f[4] else {
+        return Err(format!("frontier is {}, not an array", f[4].kind()));
+    };
+    Ok(Checkpoint {
+        size: number(f[1], "size")?,
+        head: Digest(hex(f[2], "head")?),
+        root: Digest(hex(f[3], "root")?),
+        frontier: peaks
+            .iter()
+            .enumerate()
+            .map(|(n, peak)| hex(peak, &format!("frontier[{n}]")).map(Digest))
+            .collect::<Result<_, _>>()?,
+        signature: signature(f[5], "signature")?,
+    })
 }
 
 #[cfg(test)]
@@ -595,5 +920,272 @@ mod tests {
         assert!(keys_json(&rotated, None).ends_with(&format!(
             "\"retired\":{{\"b-agent\":[\"{a}\",\"{plane}\"]}}}}"
         )));
+    }
+
+    /// A ledger with one line of every shape the export has.
+    fn every_kind_of_line() -> Ledger {
+        let key = SigningKey::from_seed(&[8; 32]);
+        let mut l = Ledger::new()
+            .with_checkpoints(2)
+            .with_signer(SigningKey::from_seed(&[9; 32]));
+        l.checkpoint(); // size 0, with an empty frontier
+        let actions = [
+            Action::Apply {
+                resource: "w\u{e9}b".into(),
+                manifest: "a\"b\\c\n\r\t\u{0}\u{1f}\u{7f}\u{2028}\u{1f980}".into(),
+            },
+            Action::Scale {
+                resource: "api".into(),
+                replicas: u32::MAX,
+            },
+            Action::Destroy {
+                resource: String::new(),
+            },
+        ];
+        let priorities = [Priority::Bulk, Priority::Normal, Priority::Pager];
+        let blasts = [BlastRadius::Cell, BlastRadius::Region, BlastRadius::Global];
+        for (n, action) in actions.into_iter().enumerate() {
+            let intent = Intent::new(
+                [u64::MAX, 0, 7][n],
+                AgentId::new(["", "a\"b", "d\u{e9}ployeur"][n]),
+                action,
+                priorities[n],
+                blasts[n],
+            );
+            let intent = if n == 1 { intent } else { intent.signed(&key) };
+            l.append_intent(
+                &intent,
+                "admit",
+                [None, Some(String::new()), Some("why\n".into())][n].clone(),
+                vec![("p".into(), "admit".into()); n],
+            );
+        }
+        l.append(3, "ops", "released");
+        l
+    }
+
+    #[test]
+    fn every_line_reads_back_as_written() {
+        let l = every_kind_of_line();
+        let text = export(&l);
+        let mut records = l.records().iter();
+        let mut checkpoints = l.checkpoints().iter();
+        for line in text.lines() {
+            match read_line(line).unwrap_or_else(|e| panic!("{line}: {e}")) {
+                Line::Header { from } => assert_eq!(header(from), line),
+                Line::Record(r) => {
+                    let want = records.next().unwrap();
+                    assert_eq!(record_line(&r), line);
+                    assert_eq!(
+                        (r.seq, r.digest, r.prev),
+                        (want.seq, want.digest, want.prev)
+                    );
+                    assert_eq!(r.intent, want.intent);
+                    assert_eq!(r.evidence, want.evidence);
+                    assert_eq!((&r.agent, &r.verdict), (&want.agent, &want.verdict));
+                }
+                Line::Checkpoint(c) => assert_eq!(&c, checkpoints.next().unwrap()),
+            }
+        }
+        assert!(records.next().is_none() && checkpoints.next().is_none());
+        // A suffix header reads back too; whether to accept it is the
+        // caller's choice.
+        assert!(matches!(
+            read_line(&header(9)),
+            Ok(Line::Header { from: 9 })
+        ));
+    }
+
+    #[test]
+    fn malformed_lines_are_refused() {
+        let l = every_kind_of_line();
+        let text = export(&l);
+        let lines: Vec<&str> = text.lines().collect();
+        // The scale record (no signature) and the first checkpoint.
+        let record = lines
+            .iter()
+            .find(|l| l.contains("\"kind\":\"scale\""))
+            .unwrap();
+        let checkpoint = lines[1];
+        assert!(checkpoint.starts_with("{\"type\":\"checkpoint\",\"size\":0,"));
+        let refused = |line: &str, problem: &str| match read_line(line) {
+            Ok(read) => panic!("{line} was read as {read:?}"),
+            Err(e) => assert!(e.contains(problem), "{line}: {e:?} should say {problem:?}"),
+        };
+        let r = |from: &str, to: &str| {
+            assert!(record.contains(from), "{from}");
+            record.replacen(from, to, 1)
+        };
+        // Types and values.
+        refused(
+            &r("\"intent_id\":\"0\"", "\"intent_id\":0"),
+            "intent_id is a number, not a string",
+        );
+        refused(
+            &r("\"intent_id\":\"0\"", "\"intent_id\":\"00\""),
+            "intent_id is not a u64",
+        );
+        refused(
+            &r("\"intent_id\":\"0\"", "\"intent_id\":\"+1\""),
+            "intent_id is not a u64",
+        );
+        refused(
+            &r(
+                "\"intent_id\":\"0\"",
+                "\"intent_id\":\"18446744073709551616\"",
+            ),
+            "intent_id is not a u64",
+        );
+        refused(
+            &r("\"seq\":", "\"seq\":\"").replacen(",\"intent_id\"", "\",\"intent_id\"", 1),
+            "seq is a string, not a number",
+        );
+        refused(
+            &r("\"kind\":\"scale\"", "\"kind\":[\"scale\"]"),
+            "intent.action.kind is not",
+        );
+        refused(
+            &r("\"kind\":\"scale\"", "\"kind\":\"Scale\""),
+            "intent.action.kind is not",
+        );
+        refused(
+            &r("\"replicas\":4294967295", "\"replicas\":4294967296"),
+            "replicas is not a u32",
+        );
+        refused(
+            &r("\"replicas\":4294967295", "\"replicas\":\"5\""),
+            "replicas is a string",
+        );
+        refused(
+            &r("\"priority\":\"normal\"", "\"priority\":\"high\""),
+            "intent.priority is not",
+        );
+        refused(
+            &r("\"blast_radius\":\"region\"", "\"blast_radius\":1"),
+            "intent.blast_radius is a number",
+        );
+        refused(
+            &r("[\"p\",\"admit\"]", "[\"p\",\"admit\",\"x\"]"),
+            "policies[0] is not a [name, label] pair",
+        );
+        refused(
+            &r("[\"p\",\"admit\"]", "[\"p\"]"),
+            "policies[0] is not a [name, label] pair",
+        );
+        refused(
+            &r("[\"p\",\"admit\"]", "[\"p\",1]"),
+            "policies[0][1] is a number",
+        );
+        refused(
+            &r("\"policies\":[", "\"policies\":{\"a\":[").replacen(
+                "]],\"intent\"",
+                "]]},\"intent\"",
+                1,
+            ),
+            "policies is an object",
+        );
+        refused(
+            &r("\"reason\":\"\"", "\"reason\":false"),
+            "reason is a boolean",
+        );
+        refused(
+            &r("\"agent\":\"a\\\"b\"", "\"agent\":null"),
+            "agent is null, not a string",
+        );
+        refused(
+            &r("\"intent\":{", "\"intent\":[{").replacen("},\"prev\"", "}],\"prev\"", 1),
+            "intent is an array",
+        );
+        refused(
+            &r("\"signature\":null", "\"signature\":\"00\""),
+            "intent.signature is not 64 bytes",
+        );
+        let digest_at = record.find("\"digest\":\"").unwrap() + 10;
+        let upper = format!("{}A{}", &record[..digest_at], &record[digest_at + 1..]);
+        refused(&upper, "digest is not 32 bytes of lowercase hex");
+        refused(&r("\"prev\":\"", "\"prev\":\"0"), "prev is not 32 bytes");
+        // Fields: unknown, missing, out of order, twice.
+        refused(
+            &r("\"verdict\":", "\"x\":1,\"verdict\":"),
+            "the record has an unknown field \"x\"",
+        );
+        refused(
+            &r(",\"verdict\":\"admit\"", ""),
+            "the record has no \"verdict\"",
+        );
+        refused(
+            &r(
+                "\"agent\":\"a\\\"b\",\"verdict\":\"admit\"",
+                "\"verdict\":\"admit\",\"agent\":\"a\\\"b\"",
+            ),
+            "the record does not have its fields in the documented order",
+        );
+        refused(
+            &r("\"verdict\":", "\"verdict\":\"admit\",\"verdict\":"),
+            "appears twice",
+        );
+        refused(
+            &r(
+                "\"replicas\":4294967295",
+                "\"replicas\":4294967295,\"manifest\":\"m\"",
+            ),
+            "intent.action has an unknown field \"manifest\"",
+        );
+        // Spellings that mean the same thing are still refused.
+        refused(
+            &r("\"verdict\":", "\"verdict\" :"),
+            "not written as floodwall writes it",
+        );
+        refused(
+            &r("\"verdict\":\"admit\"", "\"verdict\":\"\\u0061dmit\""),
+            "not written as floodwall writes it",
+        );
+        refused(
+            &r("\"resource\":\"api\"", "\"resource\":\"\\/api\""),
+            "not written as floodwall writes it",
+        );
+        refused(&format!(" {record}"), "not written as floodwall writes it");
+        // Checkpoints.
+        refused(
+            &checkpoint.replacen("\"size\":0", "\"size\":-0", 1),
+            "negative numbers are not used",
+        );
+        refused(
+            &checkpoint.replacen("\"frontier\":[]", "\"frontier\":[1]", 1),
+            "frontier[0] is a number",
+        );
+        refused(
+            &checkpoint.replacen("\"frontier\":[]", "\"frontier\":{}", 1),
+            "frontier is an object",
+        );
+        refused(
+            &checkpoint.replacen("\"size\":0", "\"size\":0.0", 1),
+            "only whole numbers are used",
+        );
+        // Headers and other lines.
+        let h = header(0);
+        refused(
+            &h.replacen("\"version\":1", "\"version\":2", 1),
+            "unsupported format \"floodwall-ledger\" version 2",
+        );
+        refused(
+            &h.replacen("\"hash\":\"sha256\"", "\"hash\":\"md5\"", 1),
+            "unsupported hash \"md5\"",
+        );
+        refused(
+            &h.replacen("\"from\":0", "\"from\":\"0\"", 1),
+            "from is a string",
+        );
+        refused(
+            "{\"type\":\"comment\"}",
+            "not a header, record or checkpoint line",
+        );
+        refused(
+            "{\"kind\":\"record\",\"type\":\"record\"}",
+            "not a header, record or checkpoint line",
+        );
+        refused("[]", "not a header, record or checkpoint line");
+        refused("", "not JSON this reader accepts");
+        refused("{\"type\":\"record\"", "not JSON this reader accepts");
     }
 }

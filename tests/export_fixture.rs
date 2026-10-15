@@ -3,7 +3,9 @@
 //! the largest intent id, non-ASCII names, quotes, backslashes, newlines and
 //! control characters in text, empty and missing fields, signed intents and
 //! signed checkpoints, including one at size 0, and an agent whose records
-//! were signed by a key it has since rotated away from.
+//! were signed by a key it has since rotated away from. The same ledger is
+//! also kept on disk (`durable.jsonl`), which must be the export byte for
+//! byte, and the export must read back into the same ledger.
 
 use std::fs;
 use std::path::Path;
@@ -12,25 +14,17 @@ use floodwall::export::keys_json;
 use floodwall::intent::{Action, AgentId, BlastRadius, Intent, Priority};
 use floodwall::{Keyring, Ledger, SigningKey};
 
-#[test]
-fn write_an_edge_case_export_for_the_independent_verifier() {
-    let plane = SigningKey::from_seed(&[1; 32]);
-    let agent_names = ["déployeur", "a\"b\\c", "bot"];
-    let keys: Vec<SigningKey> = (0..agent_names.len())
-        .map(|i| SigningKey::from_seed(&[10 + i as u8; 32]))
-        .collect();
-    // "bot" has rotated to a new key since signing: its records verify
-    // only with its retired key.
-    let keyring = agent_names
-        .iter()
-        .zip(&keys)
-        .fold(Keyring::new(), |ring, (name, key)| {
-            ring.with(*name, key.verifying_key())
-        })
-        .with("bot", SigningKey::from_seed(&[99; 32]).verifying_key())
-        .with_retired("bot", keys[2].verifying_key());
+const AGENTS: [&str; 3] = ["déployeur", "a\"b\\c", "bot"];
 
-    let mut ledger = Ledger::new().with_checkpoints(3).with_signer(plane.clone());
+fn agent_keys() -> Vec<SigningKey> {
+    (0..AGENTS.len())
+        .map(|i| SigningKey::from_seed(&[10 + i as u8; 32]))
+        .collect()
+}
+
+/// Record the fixture's history in `ledger`.
+fn fill(ledger: &mut Ledger) {
+    let keys = agent_keys();
     ledger.checkpoint(); // size 0
     let actions = [
         Action::Apply {
@@ -54,7 +48,7 @@ fn write_an_edge_case_export_for_the_independent_verifier() {
         let who = (i % 3) as usize;
         let intent = Intent::new(
             if i == 0 { u64::MAX } else { i },
-            AgentId::new(agent_names[who]),
+            AgentId::new(AGENTS[who]),
             actions[who].clone(),
             Priority::Pager,
             BlastRadius::Region,
@@ -73,6 +67,25 @@ fn write_an_edge_case_export_for_the_independent_verifier() {
         );
     }
     ledger.checkpoint(); // size 8
+}
+
+#[test]
+fn write_an_edge_case_export_for_the_independent_verifier() {
+    let plane = SigningKey::from_seed(&[1; 32]);
+    let keys = agent_keys();
+    // "bot" has rotated to a new key since signing: its records verify
+    // only with its retired key.
+    let keyring = AGENTS
+        .iter()
+        .zip(&keys)
+        .fold(Keyring::new(), |ring, (name, key)| {
+            ring.with(*name, key.verifying_key())
+        })
+        .with("bot", SigningKey::from_seed(&[99; 32]).verifying_key())
+        .with_retired("bot", keys[2].verifying_key());
+
+    let mut ledger = Ledger::new().with_checkpoints(3).with_signer(plane.clone());
+    fill(&mut ledger);
     assert!(ledger.verify());
     assert_eq!(ledger.verify_signatures(&keyring), Ok(8));
 
@@ -95,11 +108,35 @@ fn write_an_edge_case_export_for_the_independent_verifier() {
     )
     .unwrap();
 
-    let text = String::from_utf8(whole).unwrap();
+    let text = String::from_utf8(whole.clone()).unwrap();
     assert!(text.contains("\"intent_id\":\"18446744073709551615\""));
+    assert_eq!(text.lines().count(), 1 + 8 + 4); // header, records, checkpoints 0/3/6/8
     assert!(keys_json(&keyring, None).contains(&format!(
         "\"retired\":{{\"bot\":[\"{}\"]}}",
         keys[2].verifying_key()
     )));
-    assert_eq!(text.lines().count(), 1 + 8 + 4); // header, records, checkpoints 0/3/6/8
+
+    // The export reads back into the same ledger.
+    let back = Ledger::read_jsonl(&whole[..]).unwrap();
+    assert_eq!(back.head(), ledger.head());
+    assert_eq!(back.checkpoints(), ledger.checkpoints());
+    assert_eq!(back.verify_signatures(&keyring), Ok(8));
+    let mut again = Vec::new();
+    back.export_jsonl(&mut again).unwrap();
+    assert_eq!(again, whole);
+
+    // The same history kept on disk is the export, byte for byte, and
+    // reopens as the same ledger.
+    let durable = dir.join("durable.jsonl");
+    let _ = fs::remove_file(&durable);
+    let mut on_disk = Ledger::create(&durable)
+        .unwrap()
+        .with_checkpoints(3)
+        .with_signer(plane.clone());
+    fill(&mut on_disk);
+    drop(on_disk);
+    assert_eq!(fs::read(&durable).unwrap(), whole);
+    let reopened = Ledger::open(&durable).unwrap();
+    assert_eq!(reopened.head(), ledger.head());
+    assert_eq!(reopened.checkpoints(), ledger.checkpoints());
 }

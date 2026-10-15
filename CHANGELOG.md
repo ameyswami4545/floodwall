@@ -66,6 +66,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Durable, append-only ledger on disk (FW-401). `Ledger::create(path)`
+  starts a ledger in a new file and `Ledger::open(path)` picks it up again
+  after a restart or crash; the file is the ledger's JSON Lines export,
+  written as it grows, so `tools/verify-ledger.mjs` checks the live file
+  too. Every record and checkpoint is written and synced before it is
+  added, and a `Floodwall` syncs what each call recorded before the call
+  returns, so no decision is reported before it is on disk. Opening locks
+  the file against a second writer (`ReadError::InUse`), checks every line
+  from genesis as `Ledger::verify` does, discards an unfinished last line
+  left by a crash (`Ledger::discarded_on_open`), and refuses any complete
+  line that is not exactly what floodwall writes or does not verify
+  (`ReadError::Invalid`, with its line and byte offset), leaving the file
+  untouched. `Ledger::read_jsonl` reads a whole-ledger export back into a
+  ledger in memory. A failed write or sync stops the ledger: the new
+  `try_append`, `try_append_with`, `try_append_intent` and
+  `try_checkpoint` return `WriteError`, while `append`, `append_with`,
+  `append_intent`, `checkpoint` and the plane's recording calls panic, so
+  nothing acts on a decision that may not be on disk. A small strict JSON
+  reader (zero dependencies, as ever) backs it; the demo takes
+  `--ledger FILE`, and CI checks that the demo's and the edge-case
+  fixture's ledger files are their exports byte for byte.
 - JSON Lines export for auditors (FW-304). `Ledger::export_jsonl` writes
   a header, every record and every checkpoint, one JSON object per line;
   `Ledger::export_jsonl_from(checkpoint)` writes only what follows a
