@@ -51,7 +51,9 @@
 use std::fmt;
 
 use crate::checkpoint::Checkpoint;
+use crate::durable::{Storage, WriteError};
 use crate::ed25519::{Signature, SigningKey, VerifyingKey};
+use crate::export::{checkpoint_line, record_line};
 use crate::intent::Intent;
 use crate::keyring::Keyring;
 use crate::merkle::{self, Frontier};
@@ -238,6 +240,10 @@ impl fmt::Display for SignatureError {
 impl std::error::Error for SignatureError {}
 
 /// An append-only, hash-chained log of decisions.
+///
+/// A ledger lives in memory ([`Ledger::new`]), or also on disk
+/// ([`Ledger::create`], [`Ledger::open`]; see [`crate::durable`]), where
+/// every record and checkpoint is written, and synced, before it is added.
 pub struct Ledger {
     records: Vec<Record>,
     head: Digest,
@@ -248,6 +254,19 @@ pub struct Ledger {
     checkpoint_every: Option<u64>,
     /// The plane's key, to sign checkpoints with.
     signer: Option<SigningKey>,
+    /// The file the ledger is kept in, if it is on disk.
+    storage: Option<Storage>,
+}
+
+/// Stop: a ledger on disk could not be written, so whether the latest
+/// record reached the disk is unknown, and nothing that depends on it may
+/// go ahead.
+#[track_caller]
+pub(crate) fn write_failed(e: WriteError) -> ! {
+    panic!(
+        "the ledger file could not be written ({e}); stop, and reopen it with Ledger::open \
+         to see what reached the disk"
+    )
 }
 
 impl Default for Ledger {
@@ -266,6 +285,7 @@ impl Ledger {
             checkpoints: Vec::new(),
             checkpoint_every: None,
             signer: None,
+            storage: None,
         }
     }
 
@@ -294,8 +314,25 @@ impl Ledger {
     }
 
     /// Append a decision with no evidence and return the record just written.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and writing to it fails; see
+    /// [`Ledger::try_append`].
     pub fn append(&mut self, intent_id: u64, agent: &str, verdict: &str) -> &Record {
         self.append_with(intent_id, agent, verdict, Evidence::default())
+    }
+
+    /// Like [`Ledger::append`], but a ledger on disk that cannot be written
+    /// returns [`WriteError`] instead of panicking. The record is then not
+    /// added.
+    pub fn try_append(
+        &mut self,
+        intent_id: u64,
+        agent: &str,
+        verdict: &str,
+    ) -> Result<&Record, WriteError> {
+        self.try_append_with(intent_id, agent, verdict, Evidence::default())
     }
 
     /// Append what happened to `intent`, with the verdict's reason and each
@@ -303,6 +340,11 @@ impl Ledger {
     /// stores the intent, signature and all, and takes its intent id, agent
     /// and action summary from it, so what the record shows is exactly what
     /// the agent asked for.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and writing to it fails; see
+    /// [`Ledger::try_append_intent`].
     pub fn append_intent(
         &mut self,
         intent: &Intent,
@@ -310,6 +352,72 @@ impl Ledger {
         reason: Option<String>,
         policies: Vec<(String, String)>,
     ) -> &Record {
+        match self.write_intent(intent, verdict, reason, policies, true) {
+            Ok(seq) => &self.records[seq],
+            Err(e) => write_failed(e),
+        }
+    }
+
+    /// Like [`Ledger::append_intent`], but a ledger on disk that cannot be
+    /// written returns [`WriteError`] instead of panicking. The record is
+    /// then not added.
+    pub fn try_append_intent(
+        &mut self,
+        intent: &Intent,
+        verdict: &str,
+        reason: Option<String>,
+        policies: Vec<(String, String)>,
+    ) -> Result<&Record, WriteError> {
+        let seq = self.write_intent(intent, verdict, reason, policies, true)?;
+        Ok(&self.records[seq])
+    }
+
+    /// Append a decision together with its evidence and return the record
+    /// just written. The evidence is covered by the digest, so editing it
+    /// later breaks the chain just like editing the verdict.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and writing to it fails; see
+    /// [`Ledger::try_append_with`].
+    pub fn append_with(
+        &mut self,
+        intent_id: u64,
+        agent: &str,
+        verdict: &str,
+        evidence: Evidence,
+    ) -> &Record {
+        match self.push(intent_id, None, agent, verdict, evidence, true) {
+            Ok(seq) => &self.records[seq],
+            Err(e) => write_failed(e),
+        }
+    }
+
+    /// Like [`Ledger::append_with`], but a ledger on disk that cannot be
+    /// written returns [`WriteError`] instead of panicking. The record is
+    /// then not added.
+    pub fn try_append_with(
+        &mut self,
+        intent_id: u64,
+        agent: &str,
+        verdict: &str,
+        evidence: Evidence,
+    ) -> Result<&Record, WriteError> {
+        let seq = self.push(intent_id, None, agent, verdict, evidence, true)?;
+        Ok(&self.records[seq])
+    }
+
+    /// Append what happened to `intent`; with `sync` false, a ledger on
+    /// disk writes the record but leaves syncing it to [`Ledger::sync`].
+    /// Returns the new record's position.
+    pub(crate) fn write_intent(
+        &mut self,
+        intent: &Intent,
+        verdict: &str,
+        reason: Option<String>,
+        policies: Vec<(String, String)>,
+        sync: bool,
+    ) -> Result<usize, WriteError> {
         let evidence = Evidence {
             action: intent.action.to_string(),
             reason,
@@ -321,22 +429,22 @@ impl Ledger {
             intent.agent.as_str(),
             verdict,
             evidence,
+            sync,
         )
     }
 
-    /// Append a decision together with its evidence and return the record
-    /// just written. The evidence is covered by the digest, so editing it
-    /// later breaks the chain just like editing the verdict.
-    pub fn append_with(
-        &mut self,
-        intent_id: u64,
-        agent: &str,
-        verdict: &str,
-        evidence: Evidence,
-    ) -> &Record {
-        self.push(intent_id, None, agent, verdict, evidence)
+    /// Sync everything written to a ledger on disk. Does nothing for a
+    /// ledger in memory.
+    pub(crate) fn sync(&mut self) -> Result<(), WriteError> {
+        match &mut self.storage {
+            Some(storage) => storage.sync(),
+            None => Ok(()),
+        }
     }
 
+    /// Build the next record and the checkpoint it completes, if any; write
+    /// both to disk for a ledger on disk; and only then add them. Returns
+    /// the record's position.
     fn push(
         &mut self,
         intent_id: u64,
@@ -344,7 +452,8 @@ impl Ledger {
         agent: &str,
         verdict: &str,
         evidence: Evidence,
-    ) -> &Record {
+        sync: bool,
+    ) -> Result<usize, WriteError> {
         let mut record = Record {
             seq: self.records.len() as u64,
             intent_id,
@@ -356,39 +465,144 @@ impl Ledger {
             digest: Digest::GENESIS,
         };
         record.digest = record.compute_digest();
-        self.head = record.digest;
-        self.frontier.push(&record.digest);
-        self.records.push(record);
-        if let Some(every) = self.checkpoint_every {
-            if (self.records.len() as u64).is_multiple_of(every) {
-                self.cut_checkpoint();
+        let mut frontier = self.frontier.clone();
+        frontier.push(&record.digest);
+        let size = record.seq + 1;
+        let checkpoint = self
+            .checkpoint_every
+            .filter(|every| size.is_multiple_of(*every))
+            .map(|_| self.cut_checkpoint(size, record.digest, &frontier));
+        if let Some(storage) = &mut self.storage {
+            let mut lines = record_line(&record);
+            lines.push('\n');
+            if let Some(c) = &checkpoint {
+                lines.push_str(&checkpoint_line(c));
+                lines.push('\n');
+            }
+            storage.write(lines.as_bytes())?;
+            if sync {
+                storage.sync()?;
             }
         }
-        self.records.last().expect("a record was just pushed")
+        self.head = record.digest;
+        self.frontier = frontier;
+        self.records.push(record);
+        self.checkpoints.extend(checkpoint);
+        Ok(self.records.len() - 1)
     }
 
-    fn cut_checkpoint(&mut self) {
+    /// A checkpoint of `size` records, signed if the ledger has a signer.
+    fn cut_checkpoint(&self, size: u64, head: Digest, frontier: &Frontier) -> Checkpoint {
         let mut checkpoint = Checkpoint {
-            size: self.records.len() as u64,
-            head: self.head,
-            root: self.frontier.root(),
-            frontier: self.frontier.peaks().to_vec(),
+            size,
+            head,
+            root: frontier.root(),
+            frontier: frontier.peaks().to_vec(),
             signature: None,
         };
         if let Some(key) = &self.signer {
             checkpoint.signature = Some(key.sign(checkpoint.digest().as_bytes()));
         }
-        self.checkpoints.push(checkpoint);
+        checkpoint
     }
 
     /// A checkpoint of the ledger as it is now, cutting one unless the
     /// latest checkpoint already covers every record.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and writing to it fails; see
+    /// [`Ledger::try_checkpoint`].
     pub fn checkpoint(&mut self) -> Checkpoint {
+        self.try_checkpoint().unwrap_or_else(|e| write_failed(e))
+    }
+
+    /// Like [`Ledger::checkpoint`], but a ledger on disk that cannot be
+    /// written returns [`WriteError`] instead of panicking. The checkpoint
+    /// is then not added.
+    pub fn try_checkpoint(&mut self) -> Result<Checkpoint, WriteError> {
         let size = self.records.len() as u64;
-        if self.checkpoints.last().is_none_or(|c| c.size != size) {
-            self.cut_checkpoint();
+        if let Some(latest) = self.checkpoints.last().filter(|c| c.size == size) {
+            return Ok(latest.clone());
         }
-        self.checkpoints.last().expect("just ensured").clone()
+        let checkpoint = self.cut_checkpoint(size, self.head, &self.frontier);
+        if let Some(storage) = &mut self.storage {
+            storage.write(format!("{}\n", checkpoint_line(&checkpoint)).as_bytes())?;
+            storage.sync()?;
+        }
+        self.checkpoints.push(checkpoint.clone());
+        Ok(checkpoint)
+    }
+
+    /// Add a record read back from an export or a ledger file, checking it
+    /// as [`Ledger::verify`] would: at the next position, linked to the
+    /// record before it, agreeing with its intent, and matching its digest.
+    /// Writes nothing.
+    pub(crate) fn restore_record(&mut self, r: Record) -> Result<(), String> {
+        let seq = self.records.len() as u64;
+        if r.seq != seq {
+            return Err(format!("expected record {seq}, found record {}", r.seq));
+        }
+        if r.prev != self.head {
+            return Err(format!(
+                "record {seq} does not link to the record before it"
+            ));
+        }
+        if !r.agrees_with_intent() {
+            return Err(format!(
+                "record {seq} shows a different request from the intent it holds"
+            ));
+        }
+        if r.compute_digest() != r.digest {
+            return Err(format!("record {seq} does not match its digest"));
+        }
+        self.head = r.digest;
+        self.frontier.push(&r.digest);
+        self.records.push(r);
+        Ok(())
+    }
+
+    /// Add a checkpoint read back from an export or a ledger file, checking
+    /// it as [`Ledger::verify`] would: cut at the current size, after every
+    /// earlier checkpoint, and matching the records so far. Its signature is
+    /// kept as it is. Writes nothing.
+    pub(crate) fn restore_checkpoint(&mut self, c: Checkpoint) -> Result<(), String> {
+        let size = self.records.len() as u64;
+        if c.size != size {
+            return Err(format!(
+                "a checkpoint of size {} after {size} records",
+                c.size
+            ));
+        }
+        if self
+            .checkpoints
+            .last()
+            .is_some_and(|last| last.size >= size)
+        {
+            return Err(format!(
+                "a second checkpoint at size {size}: checkpoint sizes must strictly increase"
+            ));
+        }
+        if c.head != self.head {
+            return Err(format!("checkpoint {size} has the wrong head"));
+        }
+        if c.root != self.frontier.root() {
+            return Err(format!("checkpoint {size} has the wrong Merkle root"));
+        }
+        if c.frontier != self.frontier.peaks() {
+            return Err(format!("checkpoint {size} has the wrong frontier"));
+        }
+        self.checkpoints.push(c);
+        Ok(())
+    }
+
+    /// Keep the ledger in `storage` from now on.
+    pub(crate) fn attach(&mut self, storage: Storage) {
+        self.storage = Some(storage);
+    }
+
+    pub(crate) fn storage(&self) -> Option<&Storage> {
+        self.storage.as_ref()
     }
 
     /// Every checkpoint cut so far, oldest first.

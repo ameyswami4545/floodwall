@@ -12,11 +12,16 @@
 //! of it (`ledger.jsonl`), the part after the second-to-last checkpoint
 //! (`ledger-suffix.jsonl`), and the public keys to check it with
 //! (`keys.json`). `node tools/verify-ledger.mjs` verifies them.
+//!
+//! `floodwall --ledger FILE` keeps the ledger on disk as the demo runs
+//! (FILE must not exist yet), then reopens it and checks it from genesis.
+//! The file is the same bytes as `ledger.jsonl`.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::process;
 
 use floodwall::export::keys_json;
 use floodwall::intent::{Action, AgentId, BlastRadius, Intent, IntentKey, Priority};
@@ -68,15 +73,31 @@ struct Tally {
     failed: u64,
 }
 
-fn main() {
-    let export_dir = match std::env::args().skip(1).collect::<Vec<_>>().as_slice() {
-        [] => None,
-        [flag, dir] if flag == "--export" => Some(PathBuf::from(dir)),
-        _ => {
-            eprintln!("usage: floodwall [--export DIR]");
-            std::process::exit(2);
+fn usage() -> ! {
+    eprintln!("usage: floodwall [--export DIR] [--ledger FILE]");
+    process::exit(2);
+}
+
+/// The `--export DIR` and `--ledger FILE` arguments, each at most once.
+fn arguments() -> (Option<PathBuf>, Option<PathBuf>) {
+    let (mut export, mut ledger) = (None, None);
+    let mut args = std::env::args().skip(1);
+    while let Some(flag) = args.next() {
+        let slot = match flag.as_str() {
+            "--export" => &mut export,
+            "--ledger" => &mut ledger,
+            _ => usage(),
+        };
+        match args.next() {
+            Some(value) if slot.is_none() => *slot = Some(PathBuf::from(value)),
+            _ => usage(),
         }
-    };
+    }
+    (export, ledger)
+}
+
+fn main() {
+    let (export_dir, ledger_file) = arguments();
     let agents = [
         "reconciler-1",
         "reconciler-2",
@@ -116,17 +137,28 @@ fn main() {
         .with_limit("ledger-db", 1)
         .with_conflict_window(5);
     let hold = HoldConfig::default().with_capacity(64).with_ttl(Some(40));
+    // In memory, or on disk with every decision synced before it is
+    // reported.
+    let ledger = match &ledger_file {
+        None => Ledger::new(),
+        Some(path) => {
+            let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
+            dir.map_or(Ok(()), fs::create_dir_all)
+                .map_err(floodwall::ReadError::Io)
+                .and_then(|()| Ledger::create(path))
+                .unwrap_or_else(|e| {
+                    eprintln!("cannot create the ledger file {}: {e}", path.display());
+                    process::exit(1);
+                })
+        }
+    };
     let mut plane = Floodwall::new(admission, gate)
         .with_scheduler(scheduler)
         .with_hold(hold)
         .with_keyring(keyring.clone())
         // A signed checkpoint every 256 records, so the ledger can be
         // audited from any checkpoint without replaying it from genesis.
-        .with_ledger(
-            Ledger::new()
-                .with_checkpoints(256)
-                .with_signer(plane_key.clone()),
-        );
+        .with_ledger(ledger.with_checkpoints(256).with_signer(plane_key.clone()));
 
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let flood_ticks = 200u64;
@@ -399,7 +431,32 @@ fn main() {
             ),
             Err(e) => {
                 eprintln!("export to {} failed: {e}", dir.display());
-                std::process::exit(1);
+                process::exit(1);
+            }
+        }
+    }
+
+    if let Some(path) = ledger_file {
+        // Close the file, then read it back as a restarted plane would.
+        let (len, head) = (plane.ledger().len(), plane.ledger().head());
+        drop(plane);
+        match Ledger::open(&path) {
+            Ok(reopened) if reopened.len() == len && reopened.head() == head => println!(
+                "  on disk at {}: reopened and checked from genesis, {len} records, same head",
+                path.display()
+            ),
+            Ok(reopened) => {
+                eprintln!(
+                    "{} reopened with {} records and head {}, not {len} and {head}",
+                    path.display(),
+                    reopened.len(),
+                    reopened.head()
+                );
+                process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("reopening {} failed: {e}", path.display());
+                process::exit(1);
             }
         }
     }

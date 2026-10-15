@@ -5,7 +5,8 @@ Task ids refer to [GOALS.md](GOALS.md).
 ## Current state
 
 v0.3 is done: the ledger can be trusted, and audited, by someone who does
-not trust whoever holds it. An `Intent` flows through `Admission`
+not trust whoever holds it. v0.4 has begun: the ledger can be kept on
+disk (FW-401). An `Intent` flows through `Admission`
 (per-agent token bucket + bounded priority queue with backpressure) into
 the scheduler, which starts only what may run now: a `Global` change
 alone, `Region` changes one at a time with their resource to themselves,
@@ -27,18 +28,31 @@ using only Node's standard library (`tools/verify-ledger.mjs`) checks every
 digest, link, Merkle root and signature, and that every record shows the
 intent its agent signed, in CI.
 
-Still zero dependencies (SHA-256, SHA-512 and Ed25519 are from scratch)
-and pinned to Rust 1.95. 173 unit tests, 9 doctests (including the README
-examples), a randomized invariant test (300 seeded floods plus 6 signed
-ones, each ending in checkpoint audits), an edge-case export fixture, and
-17 tamper tests of the independent verifier; fmt + clippy (`-D warnings`)
-clean.
+A ledger on disk (`Ledger::create`, `Ledger::open`) is that same JSON
+Lines file, written as it grows: every record is written and synced before
+it is added, and a plane syncs what each call recorded before the call
+returns, so no decision is reported before it is on disk. A failed write
+stops the ledger rather than guessing what reached the disk. Opening locks
+the file against a second writer, reads it back with a strict JSON reader
+of its own, checks it from genesis, and discards only a last line a crash
+left unfinished; any other bad line is refused and the file left alone.
+
+Still zero dependencies (SHA-256, SHA-512, Ed25519 and the JSON reader are
+from scratch) and pinned to Rust 1.95. 200 unit tests, 11 doctests
+(including the README examples), a randomized invariant test (300 seeded
+floods plus 6 signed ones, each ending in checkpoint audits), an edge-case
+export fixture that is also kept on disk, and 17 tamper tests of the
+independent verifier; fmt + clippy (`-D warnings`) clean.
 
 The floodwall.ai site (React + Vite in `site/`, built into `docs/` for
 GitHub Pages) describes the scheduler and hold queue.
 
 ## Recently shipped
 
+- **FW-401** - a durable, append-only ledger on disk: `Ledger::create` and
+  `Ledger::open`, a file that is the ledger's own JSON Lines export,
+  every decision synced before it is reported, a lock against a second
+  writer, and recovery from a crash mid-write.
 - **v0.3** - FW-301 to FW-304: SHA-256 hash chain, Ed25519-signed intents
   and records, signed Merkle checkpoints with suffix audits and inclusion
   proofs, and a JSON Lines export with an independent verifier.
@@ -55,14 +69,26 @@ GitHub Pages) describes the scheduler and hold queue.
 
 ## Next up
 
-- **v0.4 persistence + replay** - FW-401 to FW-405: a durable ledger on
-  disk (the JSON Lines export is a natural starting format, but reading it
-  back needs a JSON parser the crate does not have yet), the tick on every
-  record (FW-404), and rebuilding admission, scheduler and hold state from
-  the ledger (FW-402, FW-405).
+- **v0.4 persistence + replay** - FW-402 to FW-405: rebuilding admission,
+  scheduler and hold state from a reopened ledger (FW-402, FW-405), so a
+  restarted plane can carry on where it stopped, the tick on every record
+  (FW-404), and a replay property test (FW-403).
 
 ## Known gaps
 
+- A plane cannot resume from a reopened ledger yet: `Floodwall::with_ledger`
+  still needs an empty ledger, because the plane's state (queue, in-flight
+  and held intents, rate buckets) is not rebuilt from the records until
+  FW-402 and FW-405. A reopened ledger can be audited, exported and
+  appended to directly.
+- The ledger file's lock is advisory on Unix (`flock`), so it binds other
+  floodwall processes, not programs that ignore it. On Windows it is
+  mandatory and also keeps other programs from reading the file while it
+  is open; audit a copy, or the file once it is closed.
+- If the process stops between writing a record and the checkpoint it
+  completes, the reopened ledger lacks that checkpoint; the next one, or
+  `Ledger::checkpoint`, covers those records.
+- The whole ledger is still held in memory, and reopening reads all of it.
 - A retired agent key (kept for audits after a rotation) verifies any of
   its agent's records, because records do not yet carry the time they were
   written (FW-404).
