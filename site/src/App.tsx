@@ -1,26 +1,26 @@
 import { useCenteredSectionLinks } from "./hooks";
-import { GateSection } from "./sections/GateSection";
-import { Hero } from "./sections/Hero";
-import { LedgerSection } from "./sections/LedgerSection";
-import { ModelSection } from "./sections/ModelSection";
-import { RoadmapSection } from "./sections/RoadmapSection";
-import { SiteFooter } from "./sections/SiteFooter";
-import { SiteHeader } from "./sections/SiteHeader";
+import { LandingFooter } from "./landing/LandingFooter";
+import { LandingGateSection } from "./landing/LandingGateSection";
+import { LandingHeader } from "./landing/LandingHeader";
+import { LandingHero } from "./landing/LandingHero";
+import { LandingLedgerSection } from "./landing/LandingLedgerSection";
+import { LandingModelSection } from "./landing/LandingModelSection";
+import { LandingRoadmapSection } from "./landing/LandingRoadmapSection";
 
 export default function App() {
   useCenteredSectionLinks();
 
   return (
     <>
-      <SiteHeader />
+      <LandingHeader />
       <main>
-        <Hero />
-        <ModelSection />
-        <GateSection />
-        <LedgerSection />
-        <RoadmapSection />
+        <LandingHero />
+        <LandingModelSection />
+        <LandingGateSection />
+        <LandingLedgerSection />
+        <LandingRoadmapSection />
       </main>
-      <SiteFooter />
+      <LandingFooter />
     </>
   );
 }

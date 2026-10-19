@@ -1,7 +1,7 @@
 import { SectionHeading } from "../components/SectionHeading";
 import { MODEL_STAGES } from "../content";
 
-export function ModelSection() {
+export function LandingModelSection() {
   return (
     <section className="section" id="model" aria-labelledby="model-title">
       <SectionHeading id="model-title" kicker="The model">

@@ -1,7 +1,7 @@
 import { SectionHeading } from "../components/SectionHeading";
 import { ROADMAP } from "../content";
 
-export function RoadmapSection() {
+export function LandingRoadmapSection() {
   return (
     <section className="section" id="roadmap" aria-labelledby="roadmap-title">
       <SectionHeading id="roadmap-title" kicker="Roadmap">

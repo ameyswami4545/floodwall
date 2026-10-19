@@ -1,6 +1,6 @@
 import { LEDGER_ENTRIES, LEDGER_FACTS, LEDGER_HEAD_DIGEST } from "../content";
 
-export function LedgerSection() {
+export function LandingLedgerSection() {
   return (
     <section
       className="section split-section split-section-reverse"

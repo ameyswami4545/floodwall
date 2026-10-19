@@ -3,7 +3,7 @@ import { useVideoEligibility } from "../hooks";
 import { AmbientVideo } from "../components/AmbientVideo";
 import { BrandMark } from "../components/BrandMark";
 
-export function SiteFooter() {
+export function LandingFooter() {
   const canPlayVideo = useVideoEligibility();
 
   return (

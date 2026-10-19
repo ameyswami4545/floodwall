@@ -2,7 +2,7 @@ import { NAV_SECTIONS, NAV_SECTION_IDS, REPO_URL } from "../content";
 import { useActiveSection, useIsScrolled } from "../hooks";
 import { BrandMark } from "../components/BrandMark";
 
-export function SiteHeader() {
+export function LandingHeader() {
   const scrolled = useIsScrolled();
   const active = useActiveSection(NAV_SECTION_IDS);
 

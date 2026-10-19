@@ -1,6 +1,6 @@
 import { GATE_POLICIES } from "../content";
 
-export function GateSection() {
+export function LandingGateSection() {
   return (
     <section className="section split-section" id="gate" aria-labelledby="gate-title">
       <div className="card feature-card">

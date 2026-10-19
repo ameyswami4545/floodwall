@@ -8,7 +8,7 @@ const CRATE_STATS = [
   { value: __CRATE_STATS__.tests, label: "tests" },
 ];
 
-export function Hero() {
+export function LandingHero() {
   const canPlayVideo = useVideoEligibility();
 
   return (
