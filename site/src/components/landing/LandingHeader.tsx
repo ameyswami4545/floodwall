@@ -1,20 +1,19 @@
-import { NAV_SECTIONS, NAV_SECTION_IDS, REPO_URL } from "../content";
-import { useActiveSection, useIsScrolled } from "../hooks";
-import { BrandMark } from "../components/BrandMark";
+import { NAV_SECTIONS, NAV_SECTION_IDS, REPO_URL } from "../../constants/links";
+import { useActiveSection } from "../../hooks/useActiveSection";
+import { useIsScrolled } from "../../hooks/useIsScrolled";
+import { ButtonLink } from "../ui/ButtonLink";
+import { LogoLink } from "../ui/LogoLink";
 
-export function SiteHeader() {
+export function LandingHeader() {
   const scrolled = useIsScrolled();
   const active = useActiveSection(NAV_SECTION_IDS);
 
   return (
     <header className="site-header" data-scrolled={scrolled}>
       <nav className="nav-bar page-width" aria-label="Primary">
-        <a className="logo" href="#home" aria-label="Floodwall home">
-          <BrandMark />
-          <span>
-            Floodwall<sup>&reg;</sup>
-          </span>
-        </a>
+        <LogoLink>
+          Floodwall<sup>&reg;</sup>
+        </LogoLink>
         <div className="nav-links">
           {NAV_SECTIONS.map(({ id, label }) => (
             <a key={id} href={`#${id}`} aria-current={active === id ? "location" : undefined}>
@@ -22,9 +21,9 @@ export function SiteHeader() {
             </a>
           ))}
         </div>
-        <a className="button button-sm" href={REPO_URL}>
+        <ButtonLink href={REPO_URL} size="sm">
           View the Crate
-        </a>
+        </ButtonLink>
       </nav>
     </header>
   );

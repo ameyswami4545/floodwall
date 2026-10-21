@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { playVideo } from "../../helpers/video";
 
 // Start the fade-out this long before the clip ends. It covers the 500ms CSS
 // opacity fade plus the ~250ms between `timeupdate` events.
@@ -29,7 +30,7 @@ export function AmbientVideo({ src, className, poster, fadeLoop = false }: Ambie
     const observer = new IntersectionObserver(
       ([entry]) => {
         inViewRef.current = entry.isIntersecting;
-        if (entry.isIntersecting) play(video);
+        if (entry.isIntersecting) playVideo(video);
         else video.pause();
       },
       { rootMargin: "200px 0px" },
@@ -46,7 +47,7 @@ export function AmbientVideo({ src, className, poster, fadeLoop = false }: Ambie
         },
         onEnded: ({ currentTarget: video }: SyntheticEvent<HTMLVideoElement>) => {
           video.currentTime = 0;
-          if (inViewRef.current) play(video);
+          if (inViewRef.current) playVideo(video);
         },
       }
     : {};
@@ -66,9 +67,4 @@ export function AmbientVideo({ src, className, poster, fadeLoop = false }: Ambie
       {...fadeHandlers}
     />
   );
-}
-
-function play(video: HTMLVideoElement) {
-  // Rejects if the browser blocks autoplay; the illustrated scene behind stays.
-  video.play().catch(() => {});
 }

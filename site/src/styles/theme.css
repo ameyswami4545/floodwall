@@ -2,8 +2,9 @@
 /* Build-time helpers, not markup: keep their words out of the class scan. */
 @source not "../../crate-stats.mjs";
 @source not "../../crate-stats.test.mjs";
-/* Browser hooks, no markup: words like "resize" would emit stray utilities. */
-@source not "../hooks.ts";
+/* Browser hooks and helpers, no markup: words like "resize" would emit stray utilities. */
+@source not "../hooks";
+@source not "../helpers";
 
 /* ---------------------------------------------------------------- Tokens */
 
