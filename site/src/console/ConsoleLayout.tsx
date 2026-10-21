@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from "react-router";
+import { NavLink, Outlet } from "react-router";
 import { BrandMark } from "../components/BrandMark";
 import { PATHS } from "./paths";
 import { PlaneProvider, usePlane } from "./store";
@@ -23,10 +23,11 @@ export function ConsoleLayout() {
     <PlaneProvider>
       <div className="console">
         <aside className="console-sidebar">
-          <Link className="console-brand" to="/">
+          {/* The landing page is a separate page, outside the console's router. */}
+          <a className="console-brand" href="/">
             <BrandMark />
             <span>Floodwall</span>
-          </Link>
+          </a>
           <nav className="console-nav" aria-label="Console">
             {NAV.map(({ to, label, end }) => (
               <NavLink key={to} to={to} end={end}>

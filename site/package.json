@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "dev:console": "vite --config vite.console.config.ts --host 127.0.0.1",
+    "build": "vite build && vite build --config vite.console.config.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run test && npm run build",
     "test": "node --test crate-stats.test.mjs"

@@ -4,6 +4,10 @@
 @source not "../../crate-stats.test.mjs";
 /* Browser hooks, no markup: words like "resize" would emit stray utilities. */
 @source not "../hooks.ts";
+/* The console is a separate build: its words must not reach the landing CSS. */
+@source not "../console";
+@source not "../../console";
+@source not "../../vite.console.config.ts";
 
 /* ---------------------------------------------------------------- Tokens */
 
