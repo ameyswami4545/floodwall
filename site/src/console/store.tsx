@@ -14,8 +14,11 @@ import { describeAction, type Intent, type LedgerRecord } from "./types";
 
 type State = { tick: number; intents: Intent[]; ledger: LedgerRecord[] };
 
+/** What an agent proposes; the plane assigns the id, status and tick. */
+export type IntentDraft = Omit<Intent, "id" | "status" | "submittedAt">;
+
 type Event =
-  | { type: "submit"; intent: Omit<Intent, "id" | "status" | "submittedAt"> }
+  | { type: "submit"; id: number; intent: IntentDraft }
   | { type: "tick" }
   | { type: "release"; id: number; by: string }
   | { type: "expire"; id: number; by: string }
@@ -49,8 +52,7 @@ function gateOne(state: State, intent: Intent, releasedBy?: string): State {
 function reducer(state: State, event: Event): State {
   switch (event.type) {
     case "submit": {
-      const id = Math.max(0, ...state.intents.map((i) => i.id)) + 1;
-      const intent: Intent = { ...event.intent, id, status: "queued", submittedAt: state.tick };
+      const intent: Intent = { ...event.intent, id: event.id, status: "queued", submittedAt: state.tick };
       return { ...state, intents: [...state.intents, intent] };
     }
     case "tick": {
@@ -106,11 +108,24 @@ function reducer(state: State, event: Event): State {
   }
 }
 
-const PlaneContext = createContext<{ state: State; dispatch: Dispatch<Event> } | null>(null);
+type Plane = {
+  state: State;
+  dispatch: Dispatch<Event>;
+  /** Queues an intent and returns the id it was given. */
+  submit: (intent: IntentDraft) => number;
+};
+
+const PlaneContext = createContext<Plane | null>(null);
 
 export function PlaneProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, INITIAL);
-  return <PlaneContext.Provider value={{ state, dispatch }}>{children}</PlaneContext.Provider>;
+  // The one place a new intent's id is chosen, so the caller opens the intent it made.
+  const submit = (intent: IntentDraft) => {
+    const id = Math.max(0, ...state.intents.map((i) => i.id)) + 1;
+    dispatch({ type: "submit", id, intent });
+    return id;
+  };
+  return <PlaneContext.Provider value={{ state, dispatch, submit }}>{children}</PlaneContext.Provider>;
 }
 
 export function usePlane() {

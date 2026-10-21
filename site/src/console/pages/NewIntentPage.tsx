@@ -13,8 +13,15 @@ import {
   type Priority,
 } from "../types";
 
+/** A replica count: a whole number, at least 0, written without padding ("05" is "5"). */
+function parseReplicas(value: string): string | null {
+  const trimmed = value.trim();
+  const n = Number(trimmed);
+  return trimmed !== "" && Number.isInteger(n) && n >= 0 ? String(n) : null;
+}
+
 export function NewIntentPage() {
-  const { state, dispatch } = usePlane();
+  const { submit } = usePlane();
   const navigate = useNavigate();
   const [agent, setAgent] = useState(MOCK_AGENTS[0]);
   const [kind, setKind] = useState<ActionKind>("scale");
@@ -25,15 +32,15 @@ export function NewIntentPage() {
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    const id = Math.max(0, ...state.intents.map((i) => i.id)) + 1;
-    dispatch({
-      type: "submit",
-      intent: {
-        agent,
-        action: { kind, resource: resource.trim(), detail: kind === "destroy" ? undefined : detail.trim() },
-        priority,
-        blast,
-      },
+    // The browser already blocks this through min, step and required; this
+    // keeps a fraction or a negative out of the queue if it gets past them.
+    const replicas = kind === "scale" ? parseReplicas(detail) : null;
+    if (kind === "scale" && replicas === null) return;
+    const id = submit({
+      agent,
+      action: { kind, resource: resource.trim(), detail: kind === "destroy" ? undefined : (replicas ?? detail.trim()) },
+      priority,
+      blast,
     });
     navigate(PATHS.intent(id));
   };
@@ -68,12 +75,19 @@ export function NewIntentPage() {
           {kind !== "destroy" && (
             <label>
               <span className="console-label">{kind === "scale" ? "Replicas" : "Manifest"}</span>
-              <input
-                value={detail}
-                onChange={(e) => setDetail(e.target.value)}
-                inputMode={kind === "scale" ? "numeric" : undefined}
-                required
-              />
+              {kind === "scale" ? (
+                <input
+                  key="replicas"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  required
+                />
+              ) : (
+                <input key="manifest" value={detail} onChange={(e) => setDetail(e.target.value)} required />
+              )}
             </label>
           )}
         </div>

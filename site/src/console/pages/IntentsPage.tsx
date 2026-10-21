@@ -1,4 +1,4 @@
-﻿import { Link, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Badge, Empty, PageHeader } from "../components";
 import { PATHS } from "../paths";
 import { usePlane } from "../store";
