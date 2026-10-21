@@ -3,8 +3,9 @@ import { headerHeight } from "../helpers/dom";
 
 /**
  * The id of the section crossing the middle of the space below the site
- * header, which is where useCenteredSectionLinks lands a section. If two
- * ever share it, the earlier one in `ids` wins. `ids` must be stable.
+ * header. Sections fill that space, so a nav jump always puts its target
+ * there. If two ever share it, the earlier one in `ids` wins. `ids` must be
+ * stable.
  */
 export function useActiveSection(ids: readonly string[]) {
   const [active, setActive] = useState(ids[0]);

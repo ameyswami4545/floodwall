@@ -5,11 +5,8 @@ import { LandingHero } from "./components/landing/LandingHero";
 import { LandingLedgerSection } from "./components/landing/LandingLedgerSection";
 import { LandingModelSection } from "./components/landing/LandingModelSection";
 import { LandingRoadmapSection } from "./components/landing/LandingRoadmapSection";
-import { useCenteredSectionLinks } from "./hooks/useCenteredSectionLinks";
 
 export default function App() {
-  useCenteredSectionLinks();
-
   return (
     <>
       <LandingHeader />

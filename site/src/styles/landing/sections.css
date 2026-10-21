@@ -2,8 +2,15 @@ main {
   background: linear-gradient(180deg, var(--paper) 0%, #fff 48%, #f1f7fb 100%);
 }
 
+/* Each section fills the space below the header and centers its content,
+   so a nav jump (which lands it under the header via scroll-padding-top)
+   leaves it in the middle of the view. Taller content just starts at top. */
 .section {
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
   width: min(var(--content-width), 100% - 2 * var(--gutter));
+  min-height: calc(100svh - var(--header-height));
   margin-inline: auto;
   padding-block: var(--section-space);
 }
@@ -40,9 +47,11 @@ main {
 }
 
 /* Ledger mirrors Gate on wide screens: panel left, copy right. The copy
-   stays first in the markup so it reads first everywhere else. */
+   stays first in the markup so it reads first everywhere else. Its card
+   also carries bullet points, so it takes the wider column to keep them on
+   one line and the section within a screen; the ledger rows are short. */
 .split-section-reverse {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
 }
 
 .split-section-reverse > .feature-card {
