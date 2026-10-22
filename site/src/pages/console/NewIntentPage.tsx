@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import { ConsoleBackLink } from "../../components/console/ConsoleBackLink";
 import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleSelect } from "../../components/console/ConsoleSelect";
@@ -41,6 +42,7 @@ export function NewIntentPage() {
 
   return (
     <>
+      <ConsoleBackLink to={CONSOLE_PATHS.intents}>Intents</ConsoleBackLink>
       <ConsolePageHeader title="Submit intent" description="Propose a change as an agent would. It joins the queue." />
 
       <Card className="max-w-160 py-7">

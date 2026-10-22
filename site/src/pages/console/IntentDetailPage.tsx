@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router";
+import { ConsoleBackLink } from "../../components/console/ConsoleBackLink";
 import { ConsoleBadge } from "../../components/console/ConsoleBadge";
 import { ConsoleEmpty } from "../../components/console/ConsoleEmpty";
 import { ConsoleIntentSteps } from "../../components/console/ConsoleIntentSteps";
@@ -36,9 +37,7 @@ export function IntentDetailPage() {
 
   return (
     <>
-      <Link className="-mb-3 self-start font-semibold text-muted hover:text-ink" to={CONSOLE_PATHS.intents}>
-        ← Intents
-      </Link>
+      <ConsoleBackLink to={CONSOLE_PATHS.intents}>Intents</ConsoleBackLink>
       <ConsolePageHeader
         title={`Intent #${intent.id}`}
         description={describeAction(intent.action)}

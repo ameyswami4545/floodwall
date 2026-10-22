@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { ConsoleBadge } from "../../components/console/ConsoleBadge";
 import { ConsoleButton } from "../../components/console/ConsoleButton";
+import { ConsoleOpenIntent } from "../../components/console/ConsoleOpenIntent";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleStat } from "../../components/console/ConsoleStat";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -49,19 +50,21 @@ export function OverviewPage() {
         <CardContent>
           <ul className={consoleList}>
             {recent.map((record) => (
-              <li key={record.seq}>
-                <Link to={CONSOLE_PATHS.intent(record.intentId)} className={cx(consoleRow, "hover:text-bay-deep")}>
-                  <span className={cx(consoleMono, "text-muted")}>#{record.seq}</span>
-                  <span className={consoleGrow}>
-                    <strong>{record.agent}</strong>
-                    <span className="text-muted"> · {record.summary}</span>
-                  </span>
-                  {record.verdict ? (
-                    <ConsoleBadge value={record.verdict} />
-                  ) : (
-                    <span className="text-muted">{record.kind}</span>
-                  )}
-                </Link>
+              <li key={record.seq} className={consoleRow}>
+                <span className={cx(consoleMono, "text-muted")}>#{record.seq}</span>
+                <span className={consoleGrow}>
+                  <strong>{record.agent}</strong>
+                  <span className="text-muted"> · {record.summary}</span>
+                </span>
+                {record.verdict ? (
+                  <ConsoleBadge value={record.verdict} />
+                ) : (
+                  <span className="text-muted">{record.kind}</span>
+                )}
+                {/* The decision's intent as a chip: the way into it from here. */}
+                <ConsoleOpenIntent id={record.intentId}>
+                  <span className={consoleMono}>#{record.intentId}</span>
+                </ConsoleOpenIntent>
               </li>
             ))}
           </ul>
