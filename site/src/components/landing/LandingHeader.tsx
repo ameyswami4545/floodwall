@@ -1,8 +1,8 @@
 import { NAV_SECTIONS, NAV_SECTION_IDS, REPO_URL } from "../../constants/links";
 import { useActiveSection } from "../../hooks/useActiveSection";
 import { useIsScrolled } from "../../hooks/useIsScrolled";
-import { ButtonLink } from "../ui/ButtonLink";
-import { LogoLink } from "../ui/LogoLink";
+import { ButtonLink } from "../shared/ButtonLink";
+import { LogoLink } from "../shared/LogoLink";
 
 export function LandingHeader() {
   const scrolled = useIsScrolled();

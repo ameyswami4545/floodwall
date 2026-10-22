@@ -1,5 +1,5 @@
 import { FOOTER_BRIDGE_PATHS, FOOTER_SKYLINE_PATHS } from "../../constants/graphics";
-import { SvgPaths } from "../ui/SvgPaths";
+import { SvgPaths } from "../shared/SvgPaths";
 
 export function LandingFooterScene() {
   return (

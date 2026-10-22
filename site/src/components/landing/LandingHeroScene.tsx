@@ -4,7 +4,7 @@ import {
   HERO_SKYLINE_PATHS,
   HERO_WALL_LAYERS,
 } from "../../constants/graphics";
-import { SvgPaths } from "../ui/SvgPaths";
+import { SvgPaths } from "../shared/SvgPaths";
 
 /** Illustrated bay scene: shown on its own when video is off, and behind the video while it loads. */
 export function LandingHeroScene() {

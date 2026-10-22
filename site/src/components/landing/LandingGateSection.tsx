@@ -1,7 +1,7 @@
 import { GATE_POLICIES } from "../../constants/landing";
-import { DarkPanel } from "../ui/DarkPanel";
-import { FeatureCard } from "../ui/FeatureCard";
-import { VerdictLabel } from "../ui/VerdictLabel";
+import { DarkPanel } from "../shared/DarkPanel";
+import { FeatureCard } from "../shared/FeatureCard";
+import { VerdictLabel } from "../shared/VerdictLabel";
 
 export function LandingGateSection() {
   return (
