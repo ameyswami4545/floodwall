@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { cx } from "../../helpers/cx";
+import { card } from "../../styles/classes";
 import { Kicker } from "./Kicker";
 
 type FeatureCardProps = {
@@ -7,20 +9,29 @@ type FeatureCardProps = {
   title: string;
   /** Optional bullet points under the copy. */
   points?: string[];
+  /** Placement within the section, such as its order in the grid. */
+  className?: string;
   children: ReactNode;
 };
 
 /** Light card with a kicker, heading, and copy; one half of a split section. */
-export function FeatureCard({ kicker, titleId, title, points, children }: FeatureCardProps) {
+export function FeatureCard({ kicker, titleId, title, points, className, children }: FeatureCardProps) {
   return (
-    <div className="card feature-card">
+    <div className={cx(card, "p-card-lg shadow-card", className)}>
       <Kicker>{kicker}</Kicker>
-      <h2 id={titleId}>{title}</h2>
-      <p className="feature-copy">{children}</p>
+      <h2 id={titleId} className="font-display text-display-md leading-[1.05] font-normal">
+        {title}
+      </h2>
+      <p className="mt-4 text-lg leading-body text-muted mobile:text-base">{children}</p>
       {points && (
-        <ul className="feature-points">
+        <ul className="mt-6 grid gap-3 border-t border-t-line pt-6">
           {points.map((point) => (
-            <li key={point}>{point}</li>
+            <li
+              key={point}
+              className="relative pl-5 text-base leading-body text-ink-soft before:absolute before:top-[0.62em] before:left-0 before:size-2 before:rounded-pill before:bg-bridge"
+            >
+              {point}
+            </li>
           ))}
         </ul>
       )}

@@ -5,6 +5,16 @@ import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleStat } from "../../components/console/ConsoleStat";
 import { CONSOLE_PATHS, OVERVIEW_STATS } from "../../constants/console";
 import { usePlane } from "../../hooks/usePlane";
+import { cx } from "../../helpers/cx";
+import {
+  consoleCard,
+  consoleCardHead,
+  consoleCardTitle,
+  consoleGrow,
+  consoleList,
+  consoleMono,
+  consoleRow,
+} from "../../styles/classes";
 
 export function OverviewPage() {
   const { state, dispatch } = usePlane();
@@ -28,30 +38,32 @@ export function OverviewPage() {
         }
       />
 
-      <section className="console-stats">
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         {OVERVIEW_STATS.map(({ label, hint, value }) => (
           <ConsoleStat key={label} label={label} value={value(state)} hint={hint} />
         ))}
       </section>
 
-      <section className="console-card">
-        <div className="console-card-head">
-          <h2>Recent decisions</h2>
-          <Link to={CONSOLE_PATHS.ledger}>Open ledger</Link>
+      <section className={consoleCard}>
+        <div className={consoleCardHead}>
+          <h2 className={consoleCardTitle}>Recent decisions</h2>
+          <Link className="font-semibold text-bay-deep" to={CONSOLE_PATHS.ledger}>
+            Open ledger
+          </Link>
         </div>
-        <ul className="console-list">
+        <ul className={consoleList}>
           {recent.map((record) => (
             <li key={record.seq}>
-              <Link to={CONSOLE_PATHS.intent(record.intentId)} className="console-row">
-                <span className="console-mono console-muted">#{record.seq}</span>
-                <span className="console-grow">
+              <Link to={CONSOLE_PATHS.intent(record.intentId)} className={cx(consoleRow, "hover:text-bay-deep")}>
+                <span className={cx(consoleMono, "text-muted")}>#{record.seq}</span>
+                <span className={consoleGrow}>
                   <strong>{record.agent}</strong>
-                  <span className="console-muted"> · {record.summary}</span>
+                  <span className="text-muted"> · {record.summary}</span>
                 </span>
                 {record.verdict ? (
                   <ConsoleBadge value={record.verdict} />
                 ) : (
-                  <span className="console-muted">{record.kind}</span>
+                  <span className="text-muted">{record.kind}</span>
                 )}
               </Link>
             </li>

@@ -7,6 +7,7 @@ import { ConsoleTable } from "../../components/console/ConsoleTable";
 import { CONSOLE_PATHS, INTENT_COLUMNS, INTENT_FILTERS } from "../../constants/console";
 import { describeAction } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
+import { consoleCardFlush, consoleMono } from "../../styles/classes";
 
 export function IntentsPage() {
   const { state } = usePlane();
@@ -26,11 +27,12 @@ export function IntentsPage() {
         }
       />
 
-      <div className="console-tabs" role="tablist">
+      <div className="flex gap-1 self-start rounded-xl bg-tint-hover p-1" role="tablist">
         {INTENT_FILTERS.map((f) => (
           <button
             key={f.key}
             role="tab"
+            className="cursor-pointer rounded-lg [border:0] px-3.5 py-1.5 font-semibold text-ink-soft aria-selected:bg-surface aria-selected:text-ink aria-selected:shadow-[0_1px_2px_rgba(8,11,13,0.08)]"
             aria-selected={f === active}
             onClick={() => setParams(f.key === "all" ? {} : { status: f.key })}
           >
@@ -39,14 +41,14 @@ export function IntentsPage() {
         ))}
       </div>
 
-      <section className="console-card flush">
+      <section className={consoleCardFlush}>
         {intents.length === 0 ? (
           <ConsoleEmpty>No intents here.</ConsoleEmpty>
         ) : (
           <ConsoleTable columns={INTENT_COLUMNS}>
             {intents.map((intent) => (
               <tr key={intent.id}>
-                <td className="console-mono">
+                <td className={consoleMono}>
                   <Link to={CONSOLE_PATHS.intent(intent.id)}>#{intent.id}</Link>
                 </td>
                 <td>{intent.agent}</td>

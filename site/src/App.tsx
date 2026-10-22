@@ -10,7 +10,7 @@ export default function App() {
   return (
     <>
       <LandingHeader />
-      <main>
+      <main className="bg-[linear-gradient(180deg,var(--color-paper)_0%,#fff_48%,#f1f7fb_100%)]">
         <LandingHero />
         <LandingModelSection />
         <LandingGateSection />

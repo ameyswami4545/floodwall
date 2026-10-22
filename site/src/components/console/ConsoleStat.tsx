@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
+import { cx } from "../../helpers/cx";
+import { consoleCard, consoleLabel } from "../../styles/classes";
 
 type ConsoleStatProps = { label: string; value: ReactNode; hint?: string };
 
 export function ConsoleStat({ label, value, hint }: ConsoleStatProps) {
   return (
-    <div className="console-card console-stat">
-      <span className="console-label">{label}</span>
-      <strong>{value}</strong>
-      {hint && <span className="console-hint">{hint}</span>}
+    <div className={cx(consoleCard, "flex flex-col gap-1.5")}>
+      <span className={consoleLabel}>{label}</span>
+      <strong className="text-2xl leading-[1.1] font-bold tracking-[-0.02em]">{value}</strong>
+      {hint && <span className="text-muted">{hint}</span>}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { cx } from "../../helpers/cx";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { consoleControl, consoleField, consoleLabel } from "../../styles/classes";
 
 type ConsoleSelectProps<T extends string> = {
   label: string;
@@ -7,6 +9,20 @@ type ConsoleSelectProps<T extends string> = {
   options: readonly T[];
   onChange: (value: T) => void;
 };
+
+const ICON = "size-4 flex-none fill-none stroke-current stroke-[1.6] [stroke-linecap:round] [stroke-linejoin:round]";
+
+/**
+ * The trigger's border turns blue while it is focused or open, unless the
+ * pointer is over it: hovering shows its own, darker grey border.
+ */
+const TRIGGER = cx(
+  consoleControl,
+  "group flex cursor-pointer items-center justify-between gap-2 text-left transition-[border-color,box-shadow] duration-150 ease-[ease]",
+  "hover:border-[rgba(8,11,13,0.24)]",
+  "focus-visible:not-hover:border-bay-deep focus-visible:[outline:none] focus-visible:ring-3 focus-visible:ring-info-soft",
+  "aria-expanded:not-hover:border-bay-deep aria-expanded:[outline:none] aria-expanded:ring-3 aria-expanded:ring-info-soft",
+);
 
 /**
  * A labelled dropdown: a trigger button and a styled listbox, standing in for
@@ -73,14 +89,14 @@ export function ConsoleSelect<T extends string>({ label, value, options, onChang
   };
 
   return (
-    <div className="console-field console-select" ref={rootRef}>
-      <span className="console-label" id={`${id}-label`}>
+    <div className={cx("relative", consoleField)} ref={rootRef}>
+      <span className={consoleLabel} id={`${id}-label`}>
         {label}
       </span>
       <button
         ref={triggerRef}
         type="button"
-        className="console-select-trigger"
+        className={TRIGGER}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-labelledby={`${id}-label ${id}-value`}
@@ -88,14 +104,24 @@ export function ConsoleSelect<T extends string>({ label, value, options, onChang
         onKeyDown={onTriggerKeyDown}
       >
         <span id={`${id}-value`}>{value}</span>
-        <svg className="console-select-chevron" aria-hidden="true" viewBox="0 0 16 16">
+        <svg
+          className={cx(
+            ICON,
+            "text-muted transition-[transform] duration-150 ease-[ease] group-aria-expanded:transform-[rotate(180deg)]",
+          )}
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+        >
           <path d="m4 6 4 4 4-4" />
         </svg>
       </button>
       {open && (
         <ul
           ref={listRef}
-          className="console-select-list"
+          className={cx(
+            "absolute inset-x-0 top-[calc(100%+6px)] z-10 rounded-xl border border-line bg-surface p-1 [outline:none]",
+            "shadow-[0_10px_30px_-10px_rgba(8,11,13,0.25),0_2px_6px_rgba(8,11,13,0.06)] animate-console-pop motion-reduce:animate-none",
+          )}
           role="listbox"
           tabIndex={-1}
           aria-labelledby={`${id}-label`}
@@ -108,13 +134,16 @@ export function ConsoleSelect<T extends string>({ label, value, options, onChang
               id={`${id}-option-${index}`}
               role="option"
               aria-selected={option === value}
-              className={index === active ? "active" : undefined}
+              className={cx(
+                "flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-ink aria-selected:font-semibold",
+                index === active && "bg-subtle",
+              )}
               onPointerEnter={() => setActive(index)}
               onClick={() => choose(index)}
             >
               {option}
               {option === value && (
-                <svg className="console-select-check" aria-hidden="true" viewBox="0 0 16 16">
+                <svg className={ICON} aria-hidden="true" viewBox="0 0 16 16">
                   <path d="m3.5 8.5 3 3 6-7" />
                 </svg>
               )}

@@ -8,6 +8,10 @@ import { MOCK_AGENTS } from "../../constants/console-mock";
 import { parseReplicas } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
 import type { ActionKind, BlastRadius, Priority } from "../../types/console";
+import { cx } from "../../helpers/cx";
+import { consoleActions, consoleCardSkin, consoleControl, consoleField, consoleLabel } from "../../styles/classes";
+
+const INPUT = cx(consoleControl, "focus:border-bay-deep focus:[outline:none] focus:ring-3 focus:ring-info-soft");
 
 export function NewIntentPage() {
   const { submit } = usePlane();
@@ -38,20 +42,21 @@ export function NewIntentPage() {
     <>
       <ConsolePageHeader title="Submit intent" description="Propose a change as an agent would. It joins the queue." />
 
-      <form className="console-card console-form" onSubmit={onSubmit}>
+      <form className={cx(consoleCardSkin, "flex max-w-160 flex-col gap-5 p-7")} onSubmit={onSubmit}>
         <ConsoleSelect label="Agent" value={agent} options={MOCK_AGENTS} onChange={setAgent} />
 
-        <div className="console-form-row">
+        <div className="flex flex-wrap gap-4 *:min-w-40">
           <ConsoleSelect label="Action" value={kind} options={ACTION_KINDS} onChange={setKind} />
-          <label>
-            <span className="console-label">Resource</span>
-            <input value={resource} onChange={(e) => setResource(e.target.value)} required />
+          <label className={consoleField}>
+            <span className={consoleLabel}>Resource</span>
+            <input className={INPUT} value={resource} onChange={(e) => setResource(e.target.value)} required />
           </label>
           {kind !== "destroy" && (
-            <label>
-              <span className="console-label">{kind === "scale" ? "Replicas" : "Manifest"}</span>
+            <label className={consoleField}>
+              <span className={consoleLabel}>{kind === "scale" ? "Replicas" : "Manifest"}</span>
               {kind === "scale" ? (
                 <input
+                  className={INPUT}
                   key="replicas"
                   type="number"
                   min={0}
@@ -61,18 +66,24 @@ export function NewIntentPage() {
                   required
                 />
               ) : (
-                <input key="manifest" value={detail} onChange={(e) => setDetail(e.target.value)} required />
+                <input
+                  className={INPUT}
+                  key="manifest"
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  required
+                />
               )}
             </label>
           )}
         </div>
 
-        <div className="console-form-row">
+        <div className="flex flex-wrap gap-4 *:min-w-40">
           <ConsoleSelect label="Priority" value={priority} options={PRIORITIES} onChange={setPriority} />
           <ConsoleSelect label="Blast radius" value={blast} options={BLAST_RADII} onChange={setBlast} />
         </div>
 
-        <div className="console-actions">
+        <div className={cx(consoleActions, "justify-end pt-1")}>
           <ConsoleButton variant="secondary" to={CONSOLE_PATHS.intents}>
             Cancel
           </ConsoleButton>

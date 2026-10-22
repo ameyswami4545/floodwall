@@ -7,6 +7,8 @@ import { ConsoleTable } from "../../components/console/ConsoleTable";
 import { CONSOLE_PATHS, LEDGER_COLUMNS } from "../../constants/console";
 import { chainIntact, shortDigest } from "../../helpers/ledger";
 import { usePlane } from "../../hooks/usePlane";
+import { cx } from "../../helpers/cx";
+import { consoleCardFlush, consoleMono, consoleTone } from "../../styles/classes";
 
 export function LedgerPage() {
   const { state } = usePlane();
@@ -25,23 +27,23 @@ export function LedgerPage() {
       />
 
       {verified !== null && (
-        <p className={`console-banner ${intact ? "tone-good" : "tone-bad"}`}>
+        <p className={cx("rounded-control px-4 py-3 font-semibold", consoleTone[intact ? "good" : "bad"])}>
           {intact ? `Chain intact: ${verified} records verified from genesis.` : "Chain broken."}
         </p>
       )}
 
-      <section className="console-card flush">
+      <section className={consoleCardFlush}>
         <ConsoleTable columns={LEDGER_COLUMNS}>
           {[...state.ledger].reverse().map((r) => (
             <tr key={r.seq}>
-              <td className="console-mono">{r.seq}</td>
+              <td className={consoleMono}>{r.seq}</td>
               <td>{r.tick}</td>
-              <td className="console-mono">
+              <td className={consoleMono}>
                 <Link to={CONSOLE_PATHS.intent(r.intentId)}>#{r.intentId}</Link>
               </td>
               <td>{r.verdict ? <ConsoleBadge value={r.verdict} /> : r.kind}</td>
               <td>{r.summary}</td>
-              <td className="console-mono console-muted">{shortDigest(r.digest)}</td>
+              <td className={cx(consoleMono, "text-muted")}>{shortDigest(r.digest)}</td>
             </tr>
           ))}
         </ConsoleTable>

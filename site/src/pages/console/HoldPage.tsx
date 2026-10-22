@@ -5,6 +5,7 @@ import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { CONSOLE_PATHS } from "../../constants/console";
 import { describeAction } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
+import { consoleCardFlush, consoleGrow, consoleList, consoleRowPadded, consoleSub } from "../../styles/classes";
 
 export function HoldPage() {
   const { state } = usePlane();
@@ -17,18 +18,18 @@ export function HoldPage() {
         description="Deferred intents wait here. Releasing waives their deferrals; rejections still apply."
       />
 
-      <section className="console-card flush">
+      <section className={consoleCardFlush}>
         {held.length === 0 ? (
           <ConsoleEmpty>Nothing on hold.</ConsoleEmpty>
         ) : (
-          <ul className="console-list">
+          <ul className={consoleList}>
             {held.map((intent) => (
-              <li key={intent.id} className="console-row padded">
-                <span className="console-grow">
+              <li key={intent.id} className={consoleRowPadded}>
+                <span className={consoleGrow}>
                   <Link to={CONSOLE_PATHS.intent(intent.id)}>
                     <strong>#{intent.id}</strong> {describeAction(intent.action)}
                   </Link>
-                  <span className="console-sub">
+                  <span className={consoleSub}>
                     {intent.agent} · {intent.verdicts?.find((v) => v.verdict === "defer")?.reason ?? "deferred"}
                   </span>
                 </span>

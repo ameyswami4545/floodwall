@@ -1,5 +1,6 @@
 import { INTENT_STEPS } from "../../constants/console";
 import { usePlane } from "../../hooks/usePlane";
+import { consoleActions } from "../../styles/classes";
 import type { Intent } from "../../types/console";
 import { ConsoleButton } from "./ConsoleButton";
 
@@ -10,7 +11,7 @@ export function ConsoleIntentSteps({ intent }: { intent: Intent }) {
   if (!steps) return null;
 
   return (
-    <span className="console-actions">
+    <span className={consoleActions}>
       {steps.map(({ label, secondary, event }) => (
         <ConsoleButton
           key={label}

@@ -1,0 +1,72 @@
+// Tailwind class lists shared by more than one component. Each one styles a
+// kind of element completely; components add their own layout around it.
+
+/* ------------------------------------------------------------- Landing */
+
+/** The centred content column, as wide as the content or the gutters allow. */
+export const pageWidth = "mx-auto w-[min(var(--container-content),100%-2*var(--spacing-gutter))]";
+
+/**
+ * A landing section fills the space below the header and centres its
+ * content, so a nav jump (which lands it under the header via the scroll
+ * padding) leaves it in the middle of the view. Taller content just starts
+ * at the top.
+ */
+export const landingSection = `${pageWidth} grid min-h-[calc(100svh-var(--spacing-header))] content-center py-section`;
+
+/** The serif heading that opens a section or the footer. */
+export const displayHeading = "font-display text-display-lg leading-none font-normal text-ink";
+
+/** The light bordered card. */
+export const card = "rounded-card border border-line bg-[rgba(255,255,255,0.78)]";
+
+/** Small uppercase pill set above a card's title. */
+export const tag =
+  "inline-flex self-start rounded-pill bg-[rgba(232,109,78,0.1)] px-3 py-1.5 text-xs leading-normal font-bold tracking-[0.04em] text-bridge uppercase";
+
+export const cardCopy = "text-base leading-body text-muted";
+
+/** The list of rows on a dark panel, and each row's skin. */
+export const panelRows = "mt-3 mb-4 grid gap-3";
+export const panelRow = "rounded-row border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.07)] text-panel-text";
+
+/** Line art in the bay scenes: unfilled, with round ends and joins. */
+export const scenePath = "fill-none [stroke-linecap:round] [stroke-linejoin:round]";
+
+/** The twinkling city lights along the bottom of the hero and footer scenes. */
+export const bayLights =
+  "absolute inset-x-[-4%] bottom-0 animate-twinkle bg-(image:--image-bay-lights) bg-size-[64px_34px,91px_42px,128px_50px] bg-position-[0_0,26px_13px,54px_22px] mask-[linear-gradient(180deg,transparent,#000_36%,transparent_100%)]";
+
+/* ------------------------------------------------------------- Console */
+
+/** A console card's frame; `consoleCard` adds its usual padding. */
+export const consoleCardSkin = "rounded-row border border-line bg-surface";
+export const consoleCard = `${consoleCardSkin} px-6 py-5`;
+/** A card whose table or list runs to its edges. */
+export const consoleCardFlush = "overflow-hidden rounded-row border border-line bg-surface";
+export const consoleCardHead = "mb-3 flex items-baseline justify-between gap-4";
+export const consoleCardTitle = "text-base font-bold";
+
+export const consoleLabel = "text-xs font-bold tracking-[0.04em] text-muted uppercase";
+export const consoleMono = "font-mono text-[13px]";
+export const consoleActions = "flex flex-wrap gap-2";
+
+/** A divided list, its rows (plain or padded to the card's edges), and their parts. */
+export const consoleList = "[&>li+li]:border-t [&>li+li]:border-t-line";
+export const consoleRow = "flex items-center gap-4 py-3";
+export const consoleRowPadded = "flex items-center gap-4 px-6 py-4";
+export const consoleGrow = "min-w-0 flex-1";
+export const consoleSub = "mt-1 block text-muted";
+
+/** A labelled form field, and the box an input or select trigger draws. */
+export const consoleField = "flex flex-1 flex-col gap-2";
+export const consoleControl = "h-10 rounded-control border border-line bg-surface px-3 text-ink";
+
+/** The background and text color of each status tone. */
+export const consoleTone: Record<string, string> = {
+  good: "bg-good-soft text-good",
+  warn: "bg-warn-soft text-warn",
+  bad: "bg-bad-soft text-bad",
+  info: "bg-info-soft text-info",
+  neutral: "bg-subtle text-ink-soft",
+};
