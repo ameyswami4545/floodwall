@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router";
 import { CONSOLE_NAV, CONSOLE_PATHS } from "../../constants/console";
 import { usePlane } from "../../hooks/usePlane";
-import { BrandMark } from "../ui/BrandMark";
+import { BrandMark } from "../shared/BrandMark";
 import { PlaneProvider } from "./PlaneProvider";
 
 function HoldCount() {

@@ -1,9 +1,9 @@
 import { FOOTER_GROUPS, PROTO_URL } from "../../constants/links";
 import { FOOTER_POSTER_URL, HERO_VIDEO_URL } from "../../constants/media";
 import { useVideoEligibility } from "../../hooks/useVideoEligibility";
-import { AmbientVideo } from "../ui/AmbientVideo";
-import { Kicker } from "../ui/Kicker";
-import { LogoLink } from "../ui/LogoLink";
+import { AmbientVideo } from "../shared/AmbientVideo";
+import { Kicker } from "../shared/Kicker";
+import { LogoLink } from "../shared/LogoLink";
 import { LandingFooterScene } from "./LandingFooterScene";
 
 export function LandingFooter() {

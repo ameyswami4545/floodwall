@@ -3,9 +3,9 @@ import { CRATE_STATS, HERO_TITLE_LINES } from "../../constants/landing";
 import { REPO_URL } from "../../constants/links";
 import { HERO_VIDEO_URL } from "../../constants/media";
 import { useVideoEligibility } from "../../hooks/useVideoEligibility";
-import { AmbientVideo } from "../ui/AmbientVideo";
-import { ButtonLink } from "../ui/ButtonLink";
-import { Kicker } from "../ui/Kicker";
+import { AmbientVideo } from "../shared/AmbientVideo";
+import { ButtonLink } from "../shared/ButtonLink";
+import { Kicker } from "../shared/Kicker";
 import { LandingHeroScene } from "./LandingHeroScene";
 
 export function LandingHero() {

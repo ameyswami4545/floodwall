@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 import { router } from "./router";
 import "./styles/theme.css";
-import "./styles/ui.css";
+import "./styles/shared.css";
 import "./styles/landing/scenes.css";
 import "./styles/landing/header.css";
 import "./styles/landing/hero.css";

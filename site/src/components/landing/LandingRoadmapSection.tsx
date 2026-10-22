@@ -1,5 +1,5 @@
 import { ROADMAP } from "../../constants/landing";
-import { SectionHeading } from "../ui/SectionHeading";
+import { SectionHeading } from "../shared/SectionHeading";
 
 export function LandingRoadmapSection() {
   return (

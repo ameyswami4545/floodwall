@@ -1,5 +1,5 @@
 import { MODEL_STAGES } from "../../constants/landing";
-import { SectionHeading } from "../ui/SectionHeading";
+import { SectionHeading } from "../shared/SectionHeading";
 
 export function LandingModelSection() {
   return (
