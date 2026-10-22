@@ -1,0 +1,191 @@
+/* The console shell under /app: sidebar, main column and page headers.
+ * Built on the tokens in styles/theme.css; every class is prefixed console-
+ * so nothing leaks into the landing page. */
+
+.console {
+  --console-sidebar: 232px;
+  --console-surface: #fff;
+  --console-subtle: #f2f6f9;
+  --console-good: #2f7a3e;
+  --console-good-bg: #e6f4e3;
+  --console-warn: #8a5a0b;
+  --console-warn-bg: #fbf0d9;
+  --console-bad: #b23c22;
+  --console-bad-bg: #fbe6df;
+  --console-info: var(--bay-deep);
+  --console-info-bg: #e1f1f8;
+
+  display: grid;
+  grid-template-columns: var(--console-sidebar) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--console-subtle);
+  font-size: var(--text-sm);
+}
+
+/* ------------------------------------------------------------- Sidebar */
+
+.console-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  height: 100vh;
+  padding: 24px 16px;
+  border-right: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.console-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding-inline: 8px;
+  font-family: var(--display);
+  font-size: var(--text-xl);
+  line-height: 1;
+}
+
+.console-brand .brand-mark {
+  width: 26px;
+  height: 26px;
+}
+
+.console-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.console-nav a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  font-weight: 600;
+  transition: background 150ms ease;
+}
+
+.console-nav a:hover {
+  background: var(--tint-hover);
+  color: var(--ink);
+}
+
+.console-nav a.active {
+  background: var(--tint-active);
+  color: var(--ink);
+}
+
+.console-nav-count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--console-warn-bg);
+  color: var(--console-warn);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.console-sidebar-note {
+  margin: auto 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--console-subtle);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- Main */
+
+.console-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 1080px;
+  padding: 40px 48px 64px;
+  background: none;
+}
+
+.console-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.console-page-header h1 {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.console-page-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.console-back {
+  align-self: flex-start;
+  margin-bottom: -12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.console-back:hover {
+  color: var(--ink);
+}
+
+.console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- Narrow */
+
+@media (max-width: 860px) {
+  .console {
+    grid-template-columns: 1fr;
+  }
+
+  .console-sidebar {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    height: auto;
+    padding: 12px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .console-nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .console-nav a {
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .console-sidebar-note {
+    display: none;
+  }
+
+  .console-main {
+    padding: 24px 16px 48px;
+  }
+
+  .console-card.flush {
+    overflow-x: auto;
+  }
+}

@@ -5,6 +5,8 @@
 /* Browser hooks and helpers, no markup: words like "resize" would emit stray utilities. */
 @source not "../hooks";
 @source not "../helpers";
+/* The console's <table> markup would otherwise emit a stray .table utility. */
+@source not inline("table");
 
 /* ---------------------------------------------------------------- Tokens */
 
