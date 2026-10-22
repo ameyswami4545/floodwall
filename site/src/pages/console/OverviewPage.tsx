@@ -3,18 +3,11 @@ import { ConsoleBadge } from "../../components/console/ConsoleBadge";
 import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleStat } from "../../components/console/ConsoleStat";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { CONSOLE_PATHS, OVERVIEW_STATS } from "../../constants/console";
 import { usePlane } from "../../hooks/usePlane";
 import { cx } from "../../helpers/cx";
-import {
-  consoleCard,
-  consoleCardHead,
-  consoleCardTitle,
-  consoleGrow,
-  consoleList,
-  consoleMono,
-  consoleRow,
-} from "../../styles/classes";
+import { consoleGrow, consoleList, consoleMono, consoleRow } from "../../styles/classes";
 
 export function OverviewPage() {
   const { state, dispatch } = usePlane();
@@ -44,32 +37,36 @@ export function OverviewPage() {
         ))}
       </section>
 
-      <section className={consoleCard}>
-        <div className={consoleCardHead}>
-          <h2 className={consoleCardTitle}>Recent decisions</h2>
-          <Link className="font-semibold text-bay-deep" to={CONSOLE_PATHS.ledger}>
-            Open ledger
-          </Link>
-        </div>
-        <ul className={consoleList}>
-          {recent.map((record) => (
-            <li key={record.seq}>
-              <Link to={CONSOLE_PATHS.intent(record.intentId)} className={cx(consoleRow, "hover:text-bay-deep")}>
-                <span className={cx(consoleMono, "text-muted")}>#{record.seq}</span>
-                <span className={consoleGrow}>
-                  <strong>{record.agent}</strong>
-                  <span className="text-muted"> · {record.summary}</span>
-                </span>
-                {record.verdict ? (
-                  <ConsoleBadge value={record.verdict} />
-                ) : (
-                  <span className="text-muted">{record.kind}</span>
-                )}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent decisions</CardTitle>
+          <CardAction>
+            <Link className="font-semibold text-bay-deep" to={CONSOLE_PATHS.ledger}>
+              Open ledger
+            </Link>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <ul className={consoleList}>
+            {recent.map((record) => (
+              <li key={record.seq}>
+                <Link to={CONSOLE_PATHS.intent(record.intentId)} className={cx(consoleRow, "hover:text-bay-deep")}>
+                  <span className={cx(consoleMono, "text-muted")}>#{record.seq}</span>
+                  <span className={consoleGrow}>
+                    <strong>{record.agent}</strong>
+                    <span className="text-muted"> · {record.summary}</span>
+                  </span>
+                  {record.verdict ? (
+                    <ConsoleBadge value={record.verdict} />
+                  ) : (
+                    <span className="text-muted">{record.kind}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
     </>
   );
 }

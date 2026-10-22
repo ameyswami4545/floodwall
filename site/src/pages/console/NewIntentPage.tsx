@@ -3,15 +3,16 @@ import { useNavigate } from "react-router";
 import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleSelect } from "../../components/console/ConsoleSelect";
+import { Card, CardContent } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { ACTION_KINDS, BLAST_RADII, CONSOLE_PATHS, PRIORITIES } from "../../constants/console";
 import { MOCK_AGENTS } from "../../constants/console-mock";
 import { parseReplicas } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
 import type { ActionKind, BlastRadius, Priority } from "../../types/console";
 import { cx } from "../../helpers/cx";
-import { consoleActions, consoleCardSkin, consoleControl, consoleField, consoleLabel } from "../../styles/classes";
-
-const INPUT = cx(consoleControl, "focus:border-bay-deep focus:[outline:none] focus:ring-3 focus:ring-info-soft");
+import { consoleActions, consoleField, consoleLabel } from "../../styles/classes";
 
 export function NewIntentPage() {
   const { submit } = usePlane();
@@ -42,54 +43,62 @@ export function NewIntentPage() {
     <>
       <ConsolePageHeader title="Submit intent" description="Propose a change as an agent would. It joins the queue." />
 
-      <form className={cx(consoleCardSkin, "flex max-w-160 flex-col gap-5 p-7")} onSubmit={onSubmit}>
-        <ConsoleSelect label="Agent" value={agent} options={MOCK_AGENTS} onChange={setAgent} />
+      <Card className="max-w-160 py-7">
+        <CardContent className="px-7">
+          <form className="flex flex-col gap-5" onSubmit={onSubmit}>
+            <ConsoleSelect label="Agent" value={agent} options={MOCK_AGENTS} onChange={setAgent} />
 
-        <div className="flex flex-wrap gap-4 *:min-w-40">
-          <ConsoleSelect label="Action" value={kind} options={ACTION_KINDS} onChange={setKind} />
-          <label className={consoleField}>
-            <span className={consoleLabel}>Resource</span>
-            <input className={INPUT} value={resource} onChange={(e) => setResource(e.target.value)} required />
-          </label>
-          {kind !== "destroy" && (
-            <label className={consoleField}>
-              <span className={consoleLabel}>{kind === "scale" ? "Replicas" : "Manifest"}</span>
-              {kind === "scale" ? (
-                <input
-                  className={INPUT}
-                  key="replicas"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={detail}
-                  onChange={(e) => setDetail(e.target.value)}
-                  required
-                />
-              ) : (
-                <input
-                  className={INPUT}
-                  key="manifest"
-                  value={detail}
-                  onChange={(e) => setDetail(e.target.value)}
-                  required
-                />
+            <div className="flex flex-wrap gap-4 *:min-w-40">
+              <ConsoleSelect label="Action" value={kind} options={ACTION_KINDS} onChange={setKind} />
+              <div className={consoleField}>
+                <Label className={consoleLabel} htmlFor="intent-resource">
+                  Resource
+                </Label>
+                <Input id="intent-resource" value={resource} onChange={(e) => setResource(e.target.value)} required />
+              </div>
+              {kind !== "destroy" && (
+                <div className={consoleField}>
+                  <Label className={consoleLabel} htmlFor="intent-detail">
+                    {kind === "scale" ? "Replicas" : "Manifest"}
+                  </Label>
+                  {kind === "scale" ? (
+                    <Input
+                      id="intent-detail"
+                      key="replicas"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={detail}
+                      onChange={(e) => setDetail(e.target.value)}
+                      required
+                    />
+                  ) : (
+                    <Input
+                      id="intent-detail"
+                      key="manifest"
+                      value={detail}
+                      onChange={(e) => setDetail(e.target.value)}
+                      required
+                    />
+                  )}
+                </div>
               )}
-            </label>
-          )}
-        </div>
+            </div>
 
-        <div className="flex flex-wrap gap-4 *:min-w-40">
-          <ConsoleSelect label="Priority" value={priority} options={PRIORITIES} onChange={setPriority} />
-          <ConsoleSelect label="Blast radius" value={blast} options={BLAST_RADII} onChange={setBlast} />
-        </div>
+            <div className="flex flex-wrap gap-4 *:min-w-40">
+              <ConsoleSelect label="Priority" value={priority} options={PRIORITIES} onChange={setPriority} />
+              <ConsoleSelect label="Blast radius" value={blast} options={BLAST_RADII} onChange={setBlast} />
+            </div>
 
-        <div className={cx(consoleActions, "justify-end pt-1")}>
-          <ConsoleButton variant="secondary" to={CONSOLE_PATHS.intents}>
-            Cancel
-          </ConsoleButton>
-          <ConsoleButton type="submit">Submit to the queue</ConsoleButton>
-        </div>
-      </form>
+            <div className={cx(consoleActions, "justify-end pt-1")}>
+              <ConsoleButton variant="secondary" to={CONSOLE_PATHS.intents}>
+                Cancel
+              </ConsoleButton>
+              <ConsoleButton type="submit">Submit to the queue</ConsoleButton>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </>
   );
 }

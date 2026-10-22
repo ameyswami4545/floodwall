@@ -3,20 +3,12 @@ import { ConsoleBadge } from "../../components/console/ConsoleBadge";
 import { ConsoleEmpty } from "../../components/console/ConsoleEmpty";
 import { ConsoleIntentSteps } from "../../components/console/ConsoleIntentSteps";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { CONSOLE_PATHS } from "../../constants/console";
 import { describeAction } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
 import { cx } from "../../helpers/cx";
-import {
-  consoleCard,
-  consoleCardHead,
-  consoleCardTitle,
-  consoleGrow,
-  consoleLabel,
-  consoleList,
-  consoleMono,
-  consoleRow,
-} from "../../styles/classes";
+import { consoleGrow, consoleLabel, consoleList, consoleMono, consoleRow } from "../../styles/classes";
 
 export function IntentDetailPage() {
   const { id } = useParams();
@@ -53,59 +45,65 @@ export function IntentDetailPage() {
         actions={<ConsoleIntentSteps intent={intent} />}
       />
 
-      <section className={consoleCard}>
-        <dl className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-5">
-          {facts.map(({ label, value }) => (
-            <div key={label}>
-              <dt className={cx(consoleLabel, "mb-1.5")}>{label}</dt>
-              <dd className="font-semibold">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <section className={consoleCard}>
-        <div className={consoleCardHead}>
-          <h2 className={consoleCardTitle}>Gate verdicts</h2>
-          <span className="text-muted">Harshest verdict wins</span>
-        </div>
-        {intent.verdicts ? (
-          <ul className={consoleList}>
-            {intent.verdicts.map((v) => (
-              <li key={v.policy} className={consoleRow}>
-                <span className={consoleGrow}>
-                  <code>{v.policy}</code>
-                  {v.reason && <span className="text-muted"> · {v.reason}</span>}
-                </span>
-                <ConsoleBadge value={v.verdict} />
-              </li>
+      <Card>
+        <CardContent>
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-5">
+            {facts.map(({ label, value }) => (
+              <div key={label}>
+                <dt className={cx(consoleLabel, "mb-1.5")}>{label}</dt>
+                <dd className="font-semibold">{value}</dd>
+              </div>
             ))}
-          </ul>
-        ) : (
-          <ConsoleEmpty>Not gated yet. Run a tick to send it through the gate.</ConsoleEmpty>
-        )}
-      </section>
+          </dl>
+        </CardContent>
+      </Card>
 
-      <section className={consoleCard}>
-        <div className={consoleCardHead}>
-          <h2 className={consoleCardTitle}>Ledger history</h2>
-        </div>
-        {history.length ? (
-          <ul className={consoleList}>
-            {history.map((r) => (
-              <li key={r.seq} className={consoleRow}>
-                <span className={cx(consoleMono, "text-muted")}>#{r.seq}</span>
-                <span className={consoleGrow}>
-                  {r.kind} · {r.summary}
-                </span>
-                <span className="text-muted">tick {r.tick}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ConsoleEmpty>Nothing recorded yet.</ConsoleEmpty>
-        )}
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Gate verdicts</CardTitle>
+          <CardAction className="text-muted">Harshest verdict wins</CardAction>
+        </CardHeader>
+        <CardContent>
+          {intent.verdicts ? (
+            <ul className={consoleList}>
+              {intent.verdicts.map((v) => (
+                <li key={v.policy} className={consoleRow}>
+                  <span className={consoleGrow}>
+                    <code>{v.policy}</code>
+                    {v.reason && <span className="text-muted"> · {v.reason}</span>}
+                  </span>
+                  <ConsoleBadge value={v.verdict} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ConsoleEmpty>Not gated yet. Run a tick to send it through the gate.</ConsoleEmpty>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Ledger history</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {history.length ? (
+            <ul className={consoleList}>
+              {history.map((r) => (
+                <li key={r.seq} className={consoleRow}>
+                  <span className={cx(consoleMono, "text-muted")}>#{r.seq}</span>
+                  <span className={consoleGrow}>
+                    {r.kind} · {r.summary}
+                  </span>
+                  <span className="text-muted">tick {r.tick}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ConsoleEmpty>Nothing recorded yet.</ConsoleEmpty>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }

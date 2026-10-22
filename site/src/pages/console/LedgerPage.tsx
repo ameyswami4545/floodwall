@@ -4,11 +4,13 @@ import { ConsoleBadge } from "../../components/console/ConsoleBadge";
 import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleTable } from "../../components/console/ConsoleTable";
+import { Card } from "../../components/ui/card";
+import { TableCell, TableRow } from "../../components/ui/table";
 import { CONSOLE_PATHS, LEDGER_COLUMNS } from "../../constants/console";
 import { chainIntact, shortDigest } from "../../helpers/ledger";
 import { usePlane } from "../../hooks/usePlane";
 import { cx } from "../../helpers/cx";
-import { consoleCardFlush, consoleMono, consoleTone } from "../../styles/classes";
+import { consoleMono, consoleTone } from "../../styles/classes";
 
 export function LedgerPage() {
   const { state } = usePlane();
@@ -32,22 +34,22 @@ export function LedgerPage() {
         </p>
       )}
 
-      <section className={consoleCardFlush}>
+      <Card className="gap-0 py-0">
         <ConsoleTable columns={LEDGER_COLUMNS}>
           {[...state.ledger].reverse().map((r) => (
-            <tr key={r.seq}>
-              <td className={consoleMono}>{r.seq}</td>
-              <td>{r.tick}</td>
-              <td className={consoleMono}>
+            <TableRow key={r.seq}>
+              <TableCell className={consoleMono}>{r.seq}</TableCell>
+              <TableCell>{r.tick}</TableCell>
+              <TableCell className={consoleMono}>
                 <Link to={CONSOLE_PATHS.intent(r.intentId)}>#{r.intentId}</Link>
-              </td>
-              <td>{r.verdict ? <ConsoleBadge value={r.verdict} /> : r.kind}</td>
-              <td>{r.summary}</td>
-              <td className={cx(consoleMono, "text-muted")}>{shortDigest(r.digest)}</td>
-            </tr>
+              </TableCell>
+              <TableCell>{r.verdict ? <ConsoleBadge value={r.verdict} /> : r.kind}</TableCell>
+              <TableCell>{r.summary}</TableCell>
+              <TableCell className={cx(consoleMono, "text-muted")}>{shortDigest(r.digest)}</TableCell>
+            </TableRow>
           ))}
         </ConsoleTable>
-      </section>
+      </Card>
     </>
   );
 }

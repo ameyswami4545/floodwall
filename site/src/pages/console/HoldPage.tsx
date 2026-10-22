@@ -2,10 +2,11 @@ import { Link } from "react-router";
 import { ConsoleEmpty } from "../../components/console/ConsoleEmpty";
 import { ConsoleIntentSteps } from "../../components/console/ConsoleIntentSteps";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
+import { Card } from "../../components/ui/card";
 import { CONSOLE_PATHS } from "../../constants/console";
 import { describeAction } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
-import { consoleCardFlush, consoleGrow, consoleList, consoleRowPadded, consoleSub } from "../../styles/classes";
+import { consoleGrow, consoleList, consoleRowPadded, consoleSub } from "../../styles/classes";
 
 export function HoldPage() {
   const { state } = usePlane();
@@ -18,7 +19,7 @@ export function HoldPage() {
         description="Deferred intents wait here. Releasing waives their deferrals; rejections still apply."
       />
 
-      <section className={consoleCardFlush}>
+      <Card className="gap-0 py-0">
         {held.length === 0 ? (
           <ConsoleEmpty>Nothing on hold.</ConsoleEmpty>
         ) : (
@@ -38,7 +39,7 @@ export function HoldPage() {
             ))}
           </ul>
         )}
-      </section>
+      </Card>
     </>
   );
 }

@@ -4,10 +4,13 @@ import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsoleEmpty } from "../../components/console/ConsoleEmpty";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleTable } from "../../components/console/ConsoleTable";
+import { Card } from "../../components/ui/card";
+import { TableCell, TableRow } from "../../components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { CONSOLE_PATHS, INTENT_COLUMNS, INTENT_FILTERS } from "../../constants/console";
 import { describeAction } from "../../helpers/gate";
 import { usePlane } from "../../hooks/usePlane";
-import { consoleCardFlush, consoleMono } from "../../styles/classes";
+import { consoleMono } from "../../styles/classes";
 
 export function IntentsPage() {
   const { state } = usePlane();
@@ -27,42 +30,38 @@ export function IntentsPage() {
         }
       />
 
-      <div className="flex gap-1 self-start rounded-xl bg-tint-hover p-1" role="tablist">
-        {INTENT_FILTERS.map((f) => (
-          <button
-            key={f.key}
-            role="tab"
-            className="cursor-pointer rounded-lg [border:0] px-3.5 py-1.5 font-semibold text-ink-soft aria-selected:bg-surface aria-selected:text-ink aria-selected:shadow-[0_1px_2px_rgba(8,11,13,0.08)]"
-            aria-selected={f === active}
-            onClick={() => setParams(f.key === "all" ? {} : { status: f.key })}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={active.key} onValueChange={(key) => setParams(key === "all" ? {} : { status: key })}>
+        <TabsList>
+          {INTENT_FILTERS.map((f) => (
+            <TabsTrigger key={f.key} value={f.key} className="px-3">
+              {f.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
-      <section className={consoleCardFlush}>
+      <Card className="gap-0 py-0">
         {intents.length === 0 ? (
           <ConsoleEmpty>No intents here.</ConsoleEmpty>
         ) : (
           <ConsoleTable columns={INTENT_COLUMNS}>
             {intents.map((intent) => (
-              <tr key={intent.id}>
-                <td className={consoleMono}>
+              <TableRow key={intent.id}>
+                <TableCell className={consoleMono}>
                   <Link to={CONSOLE_PATHS.intent(intent.id)}>#{intent.id}</Link>
-                </td>
-                <td>{intent.agent}</td>
-                <td>{describeAction(intent.action)}</td>
-                <td>{intent.priority}</td>
-                <td>{intent.blast}</td>
-                <td>
+                </TableCell>
+                <TableCell>{intent.agent}</TableCell>
+                <TableCell>{describeAction(intent.action)}</TableCell>
+                <TableCell>{intent.priority}</TableCell>
+                <TableCell>{intent.blast}</TableCell>
+                <TableCell>
                   <ConsoleBadge value={intent.status} />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
           </ConsoleTable>
         )}
-      </section>
+      </Card>
     </>
   );
 }

@@ -39,13 +39,8 @@ export const bayLights =
 
 /* ------------------------------------------------------------- Console */
 
-/** A console card's frame; `consoleCard` adds its usual padding. */
-export const consoleCardSkin = "rounded-row border border-line bg-surface";
-export const consoleCard = `${consoleCardSkin} px-6 py-5`;
-/** A card whose table or list runs to its edges. */
-export const consoleCardFlush = "overflow-hidden rounded-row border border-line bg-surface";
-export const consoleCardHead = "mb-3 flex items-baseline justify-between gap-4";
-export const consoleCardTitle = "text-base font-bold";
+// Cards, buttons, inputs, selects, tables and tabs are shadcn's, in
+// components/ui; these are the console's own pieces around them.
 
 export const consoleLabel = "text-xs font-bold tracking-[0.04em] text-muted uppercase";
 export const consoleMono = "font-mono text-[13px]";
@@ -58,9 +53,8 @@ export const consoleRowPadded = "flex items-center gap-4 px-6 py-4";
 export const consoleGrow = "min-w-0 flex-1";
 export const consoleSub = "mt-1 block text-muted";
 
-/** A labelled form field, and the box an input or select trigger draws. */
+/** A labelled form field: the label above its input or select. */
 export const consoleField = "flex flex-1 flex-col gap-2";
-export const consoleControl = "h-10 rounded-control border border-line bg-surface px-3 text-ink";
 
 /** The background and text color of each status tone. */
 export const consoleTone: Record<string, string> = {

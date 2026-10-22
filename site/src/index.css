@@ -3,6 +3,8 @@
  * markup. */
 
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 /* Build-time helpers, not markup: keep their words out of the class scan. */
 @source not "../crate-stats.mjs";
@@ -166,7 +168,6 @@
   --animate-bridge-glow: bridge-glow 8s ease-in-out infinite;
   --animate-bridge-glow-slow: bridge-glow 9s ease-in-out infinite;
   --animate-twinkle: twinkle 5.5s steps(3, end) infinite;
-  --animate-console-pop: console-pop 120ms ease-out;
 
   @keyframes fade-rise {
     from {
@@ -207,13 +208,6 @@
     50% {
       opacity: 0.34;
       transform: translate3d(8px, -3px, 0);
-    }
-  }
-
-  @keyframes console-pop {
-    from {
-      opacity: 0;
-      transform: translateY(-4px) scale(0.98);
     }
   }
 }
@@ -258,4 +252,79 @@
       transition-duration: 0s !important;
     }
   }
+
+  /* shadcn parts (each has a data-slot) rule and ring in the theme's border
+   * color rather than currentColor. Scoped to them, not *, so the landing
+   * page keeps its own defaults. */
+  :where([data-slot], [data-slot] *) {
+    @apply border-border outline-ring/50;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* --------------------------------------------------------------- shadcn */
+
+/* The components in components/ui (shadcn on Base UI) are themed with the
+ * semantic names below, each pointing at one of the site's tokens, so the
+ * console's shadcn parts share the landing page's palette. */
+
+/* The site has no dark theme; this keeps shadcn's dark: styles off unless a
+ * .dark ancestor asks for them, instead of following the OS setting. */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: var(--color-surface);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-ink);
+  --primary-foreground: #fff;
+  --secondary: var(--color-subtle);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-tint-hover);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-subtle);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-bad);
+  --border: var(--color-line);
+  --input: var(--color-line);
+  --ring: var(--color-bay-deep);
+  --radius: 8px;
+}
+
+@theme inline {
+  --font-heading: var(--font-body);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  /* The site's --color-muted is a text color (text-muted). shadcn's muted is
+   * a surface tint, so it takes the background namespace: bg-muted reads it,
+   * text-muted still reads the site's grey. */
+  --background-color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* --radius-lg and --radius-xl stay the site's own (8px, 12px), set above. */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
