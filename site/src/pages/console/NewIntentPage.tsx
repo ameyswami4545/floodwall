@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
+import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleSelect } from "../../components/console/ConsoleSelect";
 import { ACTION_KINDS, BLAST_RADII, CONSOLE_PATHS, PRIORITIES } from "../../constants/console";
@@ -72,12 +73,10 @@ export function NewIntentPage() {
         </div>
 
         <div className="console-actions">
-          <Link className="console-button secondary" to={CONSOLE_PATHS.intents}>
+          <ConsoleButton variant="secondary" to={CONSOLE_PATHS.intents}>
             Cancel
-          </Link>
-          <button className="console-button" type="submit">
-            Submit to the queue
-          </button>
+          </ConsoleButton>
+          <ConsoleButton type="submit">Submit to the queue</ConsoleButton>
         </div>
       </form>
     </>

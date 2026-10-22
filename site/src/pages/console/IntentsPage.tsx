@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router";
 import { ConsoleBadge } from "../../components/console/ConsoleBadge";
+import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsoleEmpty } from "../../components/console/ConsoleEmpty";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleTable } from "../../components/console/ConsoleTable";
@@ -21,9 +22,7 @@ export function IntentsPage() {
         title="Intents"
         description="Every change an agent has asked to make."
         actions={
-          <Link className="console-button" to={CONSOLE_PATHS.newIntent}>
-            Submit intent
-          </Link>
+          <ConsoleButton to={CONSOLE_PATHS.newIntent}>Submit intent</ConsoleButton>
         }
       />
 

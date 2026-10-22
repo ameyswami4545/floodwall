@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { ConsoleBadge } from "../../components/console/ConsoleBadge";
+import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleTable } from "../../components/console/ConsoleTable";
 import { CONSOLE_PATHS, LEDGER_COLUMNS } from "../../constants/console";
@@ -19,9 +20,7 @@ export function LedgerPage() {
         title="Ledger"
         description={head ? `${state.ledger.length} records · head ${shortDigest(head.digest)}` : "Empty"}
         actions={
-          <button className="console-button" onClick={() => setVerified(state.ledger.length)}>
-            Verify chain
-          </button>
+          <ConsoleButton onClick={() => setVerified(state.ledger.length)}>Verify chain</ConsoleButton>
         }
       />
 

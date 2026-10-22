@@ -1,6 +1,7 @@
 import { INTENT_STEPS } from "../../constants/console";
 import { usePlane } from "../../hooks/usePlane";
 import type { Intent } from "../../types/console";
+import { ConsoleButton } from "./ConsoleButton";
 
 /** The buttons that move `intent` to its next step, if it has one. */
 export function ConsoleIntentSteps({ intent }: { intent: Intent }) {
@@ -11,13 +12,13 @@ export function ConsoleIntentSteps({ intent }: { intent: Intent }) {
   return (
     <span className="console-actions">
       {steps.map(({ label, secondary, event }) => (
-        <button
+        <ConsoleButton
           key={label}
-          className={secondary ? "console-button secondary" : "console-button"}
+          variant={secondary ? "secondary" : "primary"}
           onClick={() => dispatch(event(intent.id))}
         >
           {label}
-        </button>
+        </ConsoleButton>
       ))}
     </span>
   );

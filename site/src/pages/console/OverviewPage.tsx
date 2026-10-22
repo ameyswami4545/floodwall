@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { ConsoleBadge } from "../../components/console/ConsoleBadge";
+import { ConsoleButton } from "../../components/console/ConsoleButton";
 import { ConsolePageHeader } from "../../components/console/ConsolePageHeader";
 import { ConsoleStat } from "../../components/console/ConsoleStat";
 import { CONSOLE_PATHS, OVERVIEW_STATS } from "../../constants/console";
@@ -17,12 +18,12 @@ export function OverviewPage() {
         description={`Logical tick ${state.tick}. Run a tick to gate everything in the queue.`}
         actions={
           <>
-            <Link className="console-button secondary" to={CONSOLE_PATHS.newIntent}>
+            <ConsoleButton variant="secondary" to={CONSOLE_PATHS.newIntent}>
               Submit intent
-            </Link>
-            <button className="console-button" onClick={() => dispatch({ type: "tick" })} disabled={!hasQueued}>
+            </ConsoleButton>
+            <ConsoleButton onClick={() => dispatch({ type: "tick" })} disabled={!hasQueued}>
               Run tick
-            </button>
+            </ConsoleButton>
           </>
         }
       />
