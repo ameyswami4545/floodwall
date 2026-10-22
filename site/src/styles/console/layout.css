@@ -105,7 +105,6 @@
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  max-width: 1080px;
   padding: 40px 48px 64px;
   background: none;
 }
