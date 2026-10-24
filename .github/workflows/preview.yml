@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ${{ vars.CI_RUNNER == 'hosted' && 'ubuntu-latest' || fromJSON('["self-hosted","linux","x64"]') }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,7 +54,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ${{ vars.CI_RUNNER == 'hosted' && 'ubuntu-latest' || fromJSON('["self-hosted","linux","x64"]') }}
+    runs-on: ubuntu-latest
     permissions:
       pages: write
       id-token: write
