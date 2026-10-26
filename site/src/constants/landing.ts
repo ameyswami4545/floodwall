@@ -20,12 +20,8 @@ export const MODEL_STAGES = [
     copy: "Per-agent token buckets and a bounded priority queue keep one loop from taking the whole lane.",
   },
   {
-    title: "Scheduler",
-    copy: "Wide changes run alone, narrow ones run in parallel per resource, and a waiting change is never overtaken by lower-priority work.",
-  },
-  {
     title: "Gate",
-    copy: "A deny-overrides policy stack and a conflict check rule on every intent. Deferred changes wait on hold for a human.",
+    copy: "A deny-overrides policy stack evaluates every intent before it gets near production.",
   },
   {
     title: "Ledger",
@@ -79,7 +75,7 @@ export const ROADMAP = [
   {
     version: "0.2",
     title: "Scheduler",
-    copy: "Wide changes serialize, narrow work runs in parallel per resource, and contradictions wait for a human.",
+    copy: "Serialize wide-blast and same-resource changes while narrow work proceeds.",
   },
   {
     version: "0.3",
