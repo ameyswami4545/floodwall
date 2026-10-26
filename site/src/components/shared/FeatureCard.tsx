@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cx } from "../../helpers/cx";
-import { card } from "../../styles/classes";
+import { bulletItem, card } from "../../styles/classes";
 import { Card } from "../ui/card";
 import { Kicker } from "./Kicker";
 
@@ -27,10 +27,7 @@ export function FeatureCard({ kicker, titleId, title, points, className, childre
       {points && (
         <ul className="mt-6 grid gap-3 border-t border-t-line pt-6">
           {points.map((point) => (
-            <li
-              key={point}
-              className="relative pl-5 text-base leading-body text-ink-soft before:absolute before:top-[0.62em] before:left-0 before:size-2 before:rounded-pill before:bg-bridge"
-            >
+            <li key={point} className={bulletItem}>
               {point}
             </li>
           ))}

@@ -1,15 +1,18 @@
 import { FOOTER_GROUPS, PROTO_URL } from "../../constants/links";
 import { FOOTER_POSTER_URL, HERO_VIDEO_URL } from "../../constants/media";
 import { cx } from "../../helpers/cx";
+import { useLandingLinks } from "../../hooks/useLandingLinks";
 import { useVideoEligibility } from "../../hooks/useVideoEligibility";
 import { displayHeading, pageWidth } from "../../styles/classes";
-import { AmbientVideo } from "../shared/AmbientVideo";
-import { Kicker } from "../shared/Kicker";
-import { LogoLink } from "../shared/LogoLink";
-import { LandingFooterScene } from "./LandingFooterScene";
+import { AmbientVideo } from "./AmbientVideo";
+import { Kicker } from "./Kicker";
+import { LogoLink } from "./LogoLink";
+import { SiteFooterScene } from "./SiteFooterScene";
 
-export function LandingFooter() {
+/** The footer on the landing and pricing pages. */
+export function SiteFooter() {
   const canPlayVideo = useVideoEligibility();
+  const { sectionHref } = useLandingLinks();
 
   return (
     <footer
@@ -29,7 +32,7 @@ export function LandingFooter() {
           poster={FOOTER_POSTER_URL}
         />
       )}
-      <LandingFooterScene />
+      <SiteFooterScene />
 
       <div
         className={cx(
@@ -60,7 +63,7 @@ export function LandingFooter() {
                   <li key={label}>
                     <a
                       className="text-sm font-semibold text-[#49616c] transition-[color] duration-180 ease-[ease] hover:text-black focus-visible:text-black"
-                      href={href}
+                      href={sectionHref(href)}
                     >
                       {label}
                     </a>

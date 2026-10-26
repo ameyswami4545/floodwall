@@ -4,6 +4,7 @@ import { REPO_URL } from "../../constants/links";
 import { HERO_VIDEO_URL } from "../../constants/media";
 import { cx } from "../../helpers/cx";
 import { useVideoEligibility } from "../../hooks/useVideoEligibility";
+import { textLink } from "../../styles/classes";
 import { AmbientVideo } from "../shared/AmbientVideo";
 import { ButtonLink } from "../shared/ButtonLink";
 import { Kicker } from "../shared/Kicker";
@@ -65,10 +66,7 @@ export function LandingHero() {
           <ButtonLink href={REPO_URL} size="lg">
             View the Crate
           </ButtonLink>
-          <a
-            className="font-bold text-ink-soft transition-[color] duration-180 ease-[ease] hover:text-black focus-visible:text-black mobile:pl-1"
-            href="#model"
-          >
+          <a className={cx(textLink, "mobile:pl-1")} href="#model">
             Read the model
           </a>
         </div>

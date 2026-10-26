@@ -1,9 +1,9 @@
 import { FOOTER_BRIDGE_PATHS, FOOTER_SKYLINE_PATHS } from "../../constants/graphics";
 import { cx } from "../../helpers/cx";
 import { bayLights, scenePath } from "../../styles/classes";
-import { SvgPaths } from "../shared/SvgPaths";
+import { SvgPaths } from "./SvgPaths";
 
-export function LandingFooterScene() {
+export function SiteFooterScene() {
   return (
     <div className="pointer-events-none absolute inset-0 z-1" aria-hidden="true">
       <div className="absolute inset-x-[-18%] top-[8%] h-75 animate-footer-fog bg-(image:--image-footer-fog) opacity-78 will-change-transform" />

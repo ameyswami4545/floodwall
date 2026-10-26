@@ -1,23 +1,21 @@
 import type { ReactNode } from "react";
 import { cx } from "../../helpers/cx";
+import { useLandingLinks } from "../../hooks/useLandingLinks";
 import { BrandMark } from "./BrandMark";
 
-type LogoLinkProps = {
-  /** Where it leads: the top of the page by default. */
-  href?: string;
-  className?: string;
-  children: ReactNode;
-};
+type LogoLinkProps = { className?: string; children: ReactNode };
 
-/** Brand mark and wordmark linking back to the top of the page. */
-export function LogoLink({ href = "#home", className, children }: LogoLinkProps) {
+/** Brand mark and wordmark linking back to the top of the landing page. */
+export function LogoLink({ className, children }: LogoLinkProps) {
+  const { sectionHref } = useLandingLinks();
+
   return (
     <a
       className={cx(
         "inline-flex items-center gap-3 font-display text-2xl leading-none text-ink mobile:text-xl",
         className,
       )}
-      href={href}
+      href={sectionHref("#home")}
       aria-label="Floodwall home"
     >
       <BrandMark />
