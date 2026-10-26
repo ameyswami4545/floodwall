@@ -31,6 +31,10 @@ export const card = `${cardReset} rounded-(--radius-card) border border-line bg-
 
 export const cardCopy = "text-base leading-body text-muted";
 
+/** A list item set off by a small bridge-red dot. */
+export const bulletItem =
+  "relative pl-5 text-base leading-body text-ink-soft before:absolute before:top-[0.62em] before:left-0 before:size-2 before:rounded-pill before:bg-bridge";
+
 /** The list of rows on a dark panel, and each row's skin. */
 export const panelRows = "mt-3 mb-4 grid gap-3";
 export const panelRow = "rounded-row border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.07)] text-panel-text";
