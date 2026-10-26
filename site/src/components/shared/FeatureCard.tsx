@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { cx } from "../../helpers/cx";
 import { card } from "../../styles/classes";
+import { Card } from "../ui/card";
 import { Kicker } from "./Kicker";
 
 type FeatureCardProps = {
@@ -14,10 +15,10 @@ type FeatureCardProps = {
   children: ReactNode;
 };
 
-/** Light card with a kicker, heading, and copy; one half of a split section. */
+/** Light card (shadcn's Card) with a kicker, heading, and copy; one half of a split section. */
 export function FeatureCard({ kicker, titleId, title, points, className, children }: FeatureCardProps) {
   return (
-    <div className={cx(card, "p-card-lg shadow-card", className)}>
+    <Card className={cx(card, "block p-(--spacing-card-lg) shadow-card", className)}>
       <Kicker>{kicker}</Kicker>
       <h2 id={titleId} className="font-display text-display-md leading-[1.05] font-normal">
         {title}
@@ -35,6 +36,6 @@ export function FeatureCard({ kicker, titleId, title, points, className, childre
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

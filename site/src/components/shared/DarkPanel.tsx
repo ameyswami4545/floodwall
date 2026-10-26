@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { cx } from "../../helpers/cx";
+import { cardReset } from "../../styles/classes";
+import { Card } from "../ui/card";
 
 type DarkPanelProps = {
   title: string;
@@ -17,9 +19,10 @@ const BAR =
   "flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs font-bold tracking-[0.04em] text-panel-dim uppercase";
 
 /**
- * Dark console-style card (Gate policies, Ledger records): a head bar over a
- * stack of rows, on a faint grid, with a footer pinned to the bottom so a
- * panel stretched to its neighbour's height keeps its rows packed at the top.
+ * Dark console-style card (Gate policies, Ledger records), on shadcn's Card:
+ * a head bar over a stack of rows, on a faint grid, with a footer pinned to
+ * the bottom so a panel stretched to its neighbour's height keeps its rows
+ * packed at the top.
  */
 export function DarkPanel({
   title,
@@ -30,10 +33,11 @@ export function DarkPanel({
   children,
 }: DarkPanelProps) {
   return (
-    <div
+    <Card
       className={cx(
-        "relative flex flex-col overflow-hidden rounded-card border border-line p-4 text-white shadow-card",
-        "[background:var(--image-panel),#0b1115] *:relative",
+        cardReset,
+        "relative flex flex-col overflow-hidden rounded-(--radius-card) border border-line p-4 text-white shadow-card",
+        "bg-[#0b1115] [background:var(--image-panel),#0b1115] *:relative",
         "before:absolute before:inset-0 before:bg-(image:--image-panel-grid) before:bg-size-[44px_44px] before:opacity-24",
       )}
     >
@@ -48,6 +52,6 @@ export function DarkPanel({
           {footCode}
         </code>
       </div>
-    </div>
+    </Card>
   );
 }

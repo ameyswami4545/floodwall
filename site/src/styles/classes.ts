@@ -17,12 +17,17 @@ export const landingSection = `${pageWidth} grid min-h-[calc(100svh-var(--spacin
 /** The serif heading that opens a section or the footer. */
 export const displayHeading = "font-display text-display-lg leading-none font-normal text-ink";
 
-/** The light bordered card. */
-export const card = "rounded-card border border-line bg-[rgba(255,255,255,0.78)]";
+// The landing page builds on shadcn's parts (components/ui) but keeps its own
+// look, so each use undoes the shadcn defaults it does not share. Radii and
+// card padding are written as var() classes: shadcn's class merge does not
+// know the site's custom names (rounded-card, p-card) and would keep its own
+// value beside them instead of replacing it.
 
-/** Small uppercase pill set above a card's title. */
-export const tag =
-  "inline-flex self-start rounded-pill bg-[rgba(232,109,78,0.1)] px-3 py-1.5 text-xs leading-normal font-bold tracking-[0.04em] text-bridge uppercase";
+/** Takes shadcn's Card back to a bare flex column: no gap, ring, clipping, padding or small text. */
+export const cardReset = "gap-0 overflow-visible py-0 text-base ring-0";
+
+/** The light bordered card, on shadcn's Card. */
+export const card = `${cardReset} rounded-(--radius-card) border border-line bg-[rgba(255,255,255,0.78)]`;
 
 export const cardCopy = "text-base leading-body text-muted";
 

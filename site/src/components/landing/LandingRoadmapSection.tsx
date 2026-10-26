@@ -1,7 +1,9 @@
 import { ROADMAP } from "../../constants/landing";
 import { cx } from "../../helpers/cx";
-import { card, cardCopy, landingSection, tag } from "../../styles/classes";
+import { card, cardCopy, landingSection } from "../../styles/classes";
 import { SectionHeading } from "../shared/SectionHeading";
+import { Tag } from "../shared/Tag";
+import { Card } from "../ui/card";
 
 export function LandingRoadmapSection() {
   return (
@@ -11,10 +13,13 @@ export function LandingRoadmapSection() {
       </SectionHeading>
       <ol className="grid grid-cols-4 gap-4 tablet:grid-cols-2 mobile:grid-cols-[1fr]">
         {ROADMAP.map(({ version, title, copy }) => (
-          <li className={cx(card, "flex flex-col p-card")} key={version}>
-            <span className={tag}>{version}</span>
-            <h3 className="mt-6 mb-3 text-title leading-tight font-semibold text-ink">{title}</h3>
-            <p className={cardCopy}>{copy}</p>
+          // The <li> keeps the list's semantics; the card inside fills its grid cell.
+          <li key={version}>
+            <Card className={cx(card, "h-full p-(--spacing-card)")}>
+              <Tag>{version}</Tag>
+              <h3 className="mt-6 mb-3 text-title leading-tight font-semibold text-ink">{title}</h3>
+              <p className={cardCopy}>{copy}</p>
+            </Card>
           </li>
         ))}
       </ol>
