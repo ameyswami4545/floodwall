@@ -1,6 +1,6 @@
 import { ROADMAP } from "../../constants/landing";
 import { cx } from "../../helpers/cx";
-import { card, cardCopy, landingSection } from "../../styles/classes";
+import { card, cardCopy, cardTitle, landingSection } from "../../styles/classes";
 import { SectionHeading } from "../shared/SectionHeading";
 import { Tag } from "../shared/Tag";
 import { Card } from "../ui/card";
@@ -17,7 +17,7 @@ export function LandingRoadmapSection() {
           <li key={version}>
             <Card className={cx(card, "h-full p-(--spacing-card)")}>
               <Tag>{version}</Tag>
-              <h3 className="mt-6 mb-3 text-title leading-tight font-semibold text-ink">{title}</h3>
+              <h3 className={cx(cardTitle, "mt-6 mb-3")}>{title}</h3>
               <p className={cardCopy}>{copy}</p>
             </Card>
           </li>

@@ -2,9 +2,10 @@ import { NAV_SECTIONS, NAV_SECTION_IDS, REPO_URL } from "../../constants/links";
 import { cx } from "../../helpers/cx";
 import { useActiveSection } from "../../hooks/useActiveSection";
 import { useIsScrolled } from "../../hooks/useIsScrolled";
+import { useLandingLinks } from "../../hooks/useLandingLinks";
 import { pageWidth } from "../../styles/classes";
-import { ButtonLink } from "../shared/ButtonLink";
-import { LogoLink } from "../shared/LogoLink";
+import { ButtonLink } from "./ButtonLink";
+import { LogoLink } from "./LogoLink";
 
 const NAV_LINK = "rounded-pill px-3 py-2 text-sm font-semibold transition-[color,background] duration-180 ease-[ease]";
 /** The same shades at the top of the page and once the header turns solid. */
@@ -12,9 +13,13 @@ const NAV_LINK_IDLE =
   "text-muted hover:bg-tint-hover hover:text-ink focus-visible:bg-tint-hover focus-visible:text-ink";
 const NAV_LINK_CURRENT = "bg-tint-active text-ink";
 
-export function LandingHeader() {
+/** The sticky header on the landing and pricing pages, linking to the landing page's sections. */
+export function SiteHeader() {
   const scrolled = useIsScrolled();
   const active = useActiveSection(NAV_SECTION_IDS);
+  const { onLanding, sectionHref } = useLandingLinks();
+  // Only the landing page has the sections, so elsewhere no link is current.
+  const current = onLanding ? active : undefined;
 
   return (
     <header
@@ -34,9 +39,9 @@ export function LandingHeader() {
           {NAV_SECTIONS.map(({ id, label }) => (
             <a
               key={id}
-              className={cx(NAV_LINK, active === id ? NAV_LINK_CURRENT : NAV_LINK_IDLE)}
-              href={`#${id}`}
-              aria-current={active === id ? "location" : undefined}
+              className={cx(NAV_LINK, current === id ? NAV_LINK_CURRENT : NAV_LINK_IDLE)}
+              href={sectionHref(`#${id}`)}
+              aria-current={current === id ? "location" : undefined}
             >
               {label}
             </a>

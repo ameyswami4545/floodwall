@@ -17,6 +17,10 @@ export const landingSection = `${pageWidth} grid min-h-[calc(100svh-var(--spacin
 /** The serif heading that opens a section or the footer. */
 export const displayHeading = "font-display text-display-lg leading-none font-normal text-ink";
 
+/** A bold text link that darkens on hover or focus. */
+export const textLink =
+  "font-bold text-ink-soft transition-[color] duration-180 ease-[ease] hover:text-black focus-visible:text-black";
+
 // The landing page builds on shadcn's parts (components/ui) but keeps its own
 // look, so each use undoes the shadcn defaults it does not share. Radii and
 // card padding are written as var() classes: shadcn's class merge does not
@@ -29,7 +33,12 @@ export const cardReset = "gap-0 overflow-visible py-0 text-base ring-0";
 /** The light bordered card, on shadcn's Card. */
 export const card = `${cardReset} rounded-(--radius-card) border border-line bg-[rgba(255,255,255,0.78)]`;
 
+export const cardTitle = "text-title leading-tight font-semibold text-ink";
 export const cardCopy = "text-base leading-body text-muted";
+
+/** A list item set off by a small bridge-red dot. */
+export const bulletItem =
+  "relative pl-5 text-base leading-body text-ink-soft before:absolute before:top-[0.62em] before:left-0 before:size-2 before:rounded-pill before:bg-bridge";
 
 /** The list of rows on a dark panel, and each row's skin. */
 export const panelRows = "mt-3 mb-4 grid gap-3";
@@ -41,6 +50,11 @@ export const scenePath = "fill-none [stroke-linecap:round] [stroke-linejoin:roun
 /** The twinkling city lights along the bottom of the hero and footer scenes. */
 export const bayLights =
   "absolute inset-x-[-4%] bottom-0 animate-twinkle bg-(image:--image-bay-lights) bg-size-[64px_34px,91px_42px,128px_50px] bg-position-[0_0,26px_13px,54px_22px] mask-[linear-gradient(180deg,transparent,#000_36%,transparent_100%)]";
+
+/* ------------------------------------------------------------- Pricing */
+
+/** A pricing section: the content column, spaced from the one above. */
+export const pricingSection = `${pageWidth} pt-section`;
 
 /* ------------------------------------------------------------- Console */
 
