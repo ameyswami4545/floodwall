@@ -86,8 +86,9 @@ GitHub Pages) describes the scheduler and hold queue.
 
 ## Next up
 
-- **v0.5 policy as code** - declarative rules evaluated by the gate, and a
-  worked OPA-style example (see GOALS.md).
+- **v0.5 policy as code** - FW-501 to FW-503: declarative rules evaluated
+  by the gate, a worked OPA-style example, and policy bundles versioned
+  and recorded in the ledger alongside verdicts.
 
 ## Known gaps
 
