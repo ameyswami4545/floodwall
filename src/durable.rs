@@ -1161,8 +1161,13 @@ mod tests {
         for id in 0..3 {
             plane.submit(scale(id, &format!("svc-{id}")), 0).unwrap();
         }
-        // Submitting records nothing.
-        assert_eq!(log.take(), []);
+        // Each intent that gets in is written and synced before submit
+        // returns.
+        let ops = log.take();
+        assert_eq!(ops.len(), 6);
+        for pair in ops.chunks(2) {
+            assert!(matches!(pair, [Op::Write(w), Op::Sync] if w.contains("\"queued\"")));
+        }
         let report = plane.tick(0);
         assert_eq!(report.decisions.len(), 3);
         // Three records written, then one sync, all before tick returned.
@@ -1224,7 +1229,9 @@ mod tests {
 
     #[test]
     fn a_plane_stops_before_acting_on_a_decision_it_could_not_keep() {
-        for (fail_write, fail_sync) in [(Some(1), None), (None, Some(0))] {
+        // The three arrivals take writes and syncs 0 to 2; the tick's second
+        // decision is write 4, and its sync is sync 3.
+        for (fail_write, fail_sync) in [(Some(4), None), (None, Some(3))] {
             let log = Log {
                 fail_write,
                 fail_sync,
@@ -1250,7 +1257,7 @@ mod tests {
                 Some(_) => {
                     assert_eq!(in_flight, [0]);
                     assert_eq!(plane.pending(), 1);
-                    assert_eq!(plane.ledger().len(), 1);
+                    assert_eq!(plane.ledger().len(), 4);
                 }
                 None => {
                     assert_eq!(in_flight, [0, 1, 2]);

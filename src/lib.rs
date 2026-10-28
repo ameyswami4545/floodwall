@@ -72,6 +72,7 @@ pub mod keyring;
 pub mod ledger;
 pub mod merkle;
 pub mod policy;
+pub mod replay;
 pub mod scheduler;
 pub mod sha256;
 pub mod sha512;
@@ -90,6 +91,7 @@ pub use keyring::{AuthError, Keyring};
 pub use ledger::{Digest, Evidence, Ledger, Record, SignatureError, SignatureProblem};
 pub use merkle::FrontierFull;
 pub use policy::{Policy, Verdict};
+pub use replay::ResumeError;
 pub use scheduler::{InFlight, SchedulerConfig};
 
 use hold::Hold;
@@ -108,6 +110,10 @@ pub const CONFLICT_CHECK: &str = "conflict-window";
 /// The name the signature check has in a decision's breakdown, when the
 /// plane has a [`Keyring`].
 pub const SIGNATURE_CHECK: &str = "agent-signature";
+
+/// The ledger verdict for an intent that got through admission into the
+/// queue ([`Floodwall::submit`]).
+pub const QUEUED: &str = "queued";
 
 /// The outcome of ruling on one intent: the intent itself, the combined
 /// verdict, and the per-policy breakdown that produced it.
@@ -233,6 +239,10 @@ pub struct Floodwall {
     keyring: Option<Keyring>,
     /// Live intents already checked against the current keyring.
     authenticated: HashSet<IntentKey>,
+    /// While [`Floodwall::resume`] replays a pass: for each intent the
+    /// ledger shows that pass ruling on, whether its signature check
+    /// passed (see [`crate::replay`]).
+    replayed_checks: Option<HashMap<IntentKey, bool>>,
     clock: u64,
 }
 
@@ -279,6 +289,7 @@ impl Floodwall {
             live,
             keyring: None,
             authenticated: HashSet::new(),
+            replayed_checks: None,
         })
     }
 
@@ -346,6 +357,16 @@ impl Floodwall {
     /// held is refused with [`Rejected::Duplicate`], before the rate limit
     /// is touched. Last, admission may refuse it with
     /// [`Rejected::Backpressure`] or [`Rejected::RateLimited`].
+    ///
+    /// An intent that gets in is recorded in the ledger as `queued`, so it
+    /// is not lost if the plane stops before ruling on it (see
+    /// [`Floodwall::resume`]). Refused intents change nothing and are not
+    /// recorded.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ledger is on disk and cannot be written (see
+    /// [Durability](Floodwall#durability)).
     pub fn submit(&mut self, intent: Intent, now: u64) -> Result<(), Rejected> {
         let now = self.advance(now);
         if let Some(keyring) = &self.keyring {
@@ -355,15 +376,25 @@ impl Floodwall {
                 AuthError::BadSignature => Rejected::BadSignature,
             })?;
         }
+        self.queue(intent, now)
+    }
+
+    /// Let an intent in, past the signature check: refuse a duplicate,
+    /// then put it through admission, and record it as `queued` if it gets
+    /// in. A keyring's check, if any, was done by the caller (or, in a
+    /// replay, when the intent was first submitted).
+    fn queue(&mut self, intent: Intent, now: u64) -> Result<(), Rejected> {
         let key = intent.key();
         if self.live.contains(&key) {
             return Err(Rejected::Duplicate);
         }
-        self.admission.submit(intent, now)?;
+        self.admission.submit(intent.clone(), now)?;
         if self.keyring.is_some() {
             self.authenticated.insert(key.clone());
         }
         self.live.insert(key);
+        self.record(&intent, QUEUED, None, Vec::new());
+        self.persist();
         Ok(())
     }
 
@@ -442,16 +473,28 @@ impl Floodwall {
         let key = intent.key();
         let GateDecision { mut breakdown, .. } = self.gate.evaluate(&intent);
         if let Some(keyring) = &self.keyring {
-            let signature = if self.authenticated.contains(&key) {
-                Verdict::Admit
-            } else {
-                match keyring.authenticate(&intent) {
+            let replayed = self
+                .replayed_checks
+                .as_ref()
+                .and_then(|checks| checks.get(&key).copied());
+            let signature = match replayed {
+                // Replaying a check the ledger shows passing: resume has
+                // verified every signature in it already.
+                Some(true) => Verdict::Admit,
+                // Replaying one it shows failing: it must fail against this
+                // keyring too, or the replay diverges.
+                Some(false) => match keyring.authenticate(&intent) {
+                    Ok(()) => Verdict::Admit,
+                    Err(e) => Verdict::Reject(e.to_string()),
+                },
+                None if self.authenticated.contains(&key) => Verdict::Admit,
+                None => match keyring.authenticate(&intent) {
                     Ok(()) => {
                         self.authenticated.insert(key.clone());
                         Verdict::Admit
                     }
                     Err(e) => Verdict::Reject(e.to_string()),
-                }
+                },
             };
             breakdown.push((SIGNATURE_CHECK.to_string(), signature));
         }
@@ -677,8 +720,6 @@ impl Floodwall {
     /// [`Ledger::with_signer`]). A ledger on disk ([`Ledger::create`]) keeps
     /// every decision durably (see [Durability](Floodwall#durability)).
     ///
-    /// # Panics
-    ///
     /// The plane and its ledger keep one clock, so each record carries the
     /// tick the plane acted at: adopting `ledger` moves whichever clock is
     /// behind up to the other ([`Floodwall::clock`],
@@ -688,11 +729,13 @@ impl Floodwall {
     ///
     /// Panics if `ledger` already has records, or this plane has already
     /// recorded something: a ledger is one plane's history from the start.
-    /// (Resuming a plane from a reopened ledger is FW-402.)
+    /// To carry on from a ledger that has records, use
+    /// [`Floodwall::resume`].
     pub fn with_ledger(mut self, mut ledger: Ledger) -> Self {
         assert!(
             ledger.is_empty() && self.ledger.is_empty(),
-            "with_ledger needs an empty ledger and a plane that has not recorded anything"
+            "with_ledger needs an empty ledger and a plane that has not recorded anything; \
+             use Floodwall::resume to carry on from a ledger with records"
         );
         let clock = self.advance(ledger.clock());
         ledger.advance_clock(clock);
@@ -775,7 +818,14 @@ mod tests {
         assert_eq!(report.decisions.len(), 1);
         assert_eq!(report.decisions[0].verdict, Verdict::Admit);
         assert_eq!(p.pending(), 0);
-        assert_eq!(p.ledger().len(), 1);
+        // Its arrival in the queue, then the decision.
+        let verdicts: Vec<&str> = p
+            .ledger()
+            .records()
+            .iter()
+            .map(|r| r.verdict.as_str())
+            .collect();
+        assert_eq!(verdicts, [QUEUED, "admit"]);
         assert!(p.ledger().verify());
     }
 
@@ -798,8 +848,8 @@ mod tests {
         assert!(matches!(report.decisions[0].verdict, Verdict::Reject(_)));
         assert_eq!(report.admitted().count(), 0);
         // Even rejected decisions are written to the ledger.
-        assert_eq!(p.ledger().len(), 1);
-        let record = &p.ledger().records()[0];
+        assert_eq!(p.ledger().len(), 2);
+        let record = &p.ledger().records()[1];
         assert_eq!(record.verdict, "reject");
         // The record says what the change was and why it was stopped.
         assert_eq!(record.evidence.action, "destroy web");
@@ -1385,8 +1435,9 @@ mod tests {
             p.release(&queued, "alice", 0),
             Err(HoldError::NotHeld(queued.clone()))
         );
-        // Nothing was recorded for the failed attempts.
-        assert_eq!(p.ledger().len(), 1);
+        // Nothing was recorded for the failed attempts: just the arrival
+        // and the decision.
+        assert_eq!(p.ledger().len(), 2);
 
         p.submit(off_list(2), 0).unwrap();
         p.tick(0);
@@ -1440,6 +1491,9 @@ mod tests {
             .map(|r| (r.verdict.clone(), r.tick))
             .collect();
         let want = [
+            (QUEUED, 0),
+            (QUEUED, 0),
+            (QUEUED, 0),
             ("admit", 5),
             ("defer", 5),
             ("defer", 5),
@@ -1462,7 +1516,7 @@ mod tests {
         q.tick(0);
         q.expire(&off_list(4).key(), "bob", 1).unwrap();
         let ticks: Vec<u64> = q.ledger().records().iter().map(|r| r.tick).collect();
-        assert_eq!(ticks, [20, 20]);
+        assert_eq!(ticks, [20, 20, 20]);
     }
 
     #[test]
@@ -1548,9 +1602,9 @@ mod tests {
             .iter()
             .map(|r| r.verdict.as_str())
             .collect();
-        assert_eq!(labels, ["defer", "defer", "expired"]);
+        assert_eq!(labels, [QUEUED, QUEUED, "defer", "defer", "expired"]);
         assert_eq!(
-            p.ledger().records()[2].evidence.reason.as_deref(),
+            p.ledger().records()[4].evidence.reason.as_deref(),
             Some("evicted: the hold queue is full (capacity 1)")
         );
         assert_eq!(p.held().map(|h| h.intent.id).collect::<Vec<_>>(), [2]);
@@ -1713,12 +1767,13 @@ mod tests {
         assert_eq!(names[names.len() - 2..], [SIGNATURE_CHECK, CONFLICT_CHECK]);
         p.complete(&IntentKey::new("bot", 1), Outcome::Succeeded, 1)
             .unwrap();
-        // Both records carry the intent's digest and signature.
+        // Every record (arrival, decision, outcome) carries the intent's
+        // digest and signature.
         for r in p.ledger().records() {
             assert_eq!(r.intent_digest(), Some(digest));
             assert!(r.signature().is_some());
         }
-        assert_eq!(p.ledger().verify_signatures(&keyring()), Ok(2));
+        assert_eq!(p.ledger().verify_signatures(&keyring()), Ok(3));
     }
 
     #[test]
@@ -1829,15 +1884,17 @@ mod tests {
         assert_eq!(
             labels,
             [
+                QUEUED,
                 "defer",
                 "released",
                 "admit",
                 "succeeded",
+                QUEUED,
                 "defer",
                 "expired"
             ]
         );
-        assert_eq!(p.ledger().verify_signatures(&keyring()), Ok(6));
+        assert_eq!(p.ledger().verify_signatures(&keyring()), Ok(8));
         assert!(p.ledger().verify());
     }
 
@@ -1875,10 +1932,13 @@ mod tests {
             p.complete(&IntentKey::new("bot", id), Outcome::Succeeded, 1)
                 .unwrap();
         }
-        let latest = p.checkpoint(); // 6 records
+        let latest = p.checkpoint(); // 4 arrivals, 4 decisions, 2 outcomes
         let cps = p.ledger().checkpoints();
-        assert_eq!(cps.iter().map(|c| c.size).collect::<Vec<_>>(), [3, 6]);
-        assert_eq!(latest, cps[1]);
+        assert_eq!(
+            cps.iter().map(|c| c.size).collect::<Vec<_>>(),
+            [3, 6, 9, 10]
+        );
+        assert_eq!(latest, cps[3]);
         // An auditor holding only the first checkpoint and the plane's key
         // checks everything after it.
         let first = cps[0].clone();
