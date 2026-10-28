@@ -66,6 +66,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A property test that replaying the record stream reproduces the live
+  decisions (FW-403): `tests/replay_property.rs` floods 150 randomly
+  configured planes (and 6 signed ones), checks every tick's report is
+  exactly what it recorded, replays each whole ledger on a new plane,
+  restarts the same flood at random points (from an export, from a file,
+  and after a crash that cut a tick short) and requires every call's
+  result, the final state and the final ledger to match the flood run
+  straight through, and changes one decision in each ledger (re-hashing
+  the chain) to require the replay to refuse it at exactly that record.
+  It found that a restart lost clock moves no record shows, which
+  `Floodwall::resume`'s `now` fixes.
 - A plane picks up where it left off after a restart (FW-402, FW-405).
   `Floodwall::resume(ledger, now)` replays a plane's ledger on a newly built
   plane with the same configuration: it makes the same calls at the same

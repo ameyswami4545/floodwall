@@ -5,10 +5,11 @@ Task ids refer to [GOALS.md](GOALS.md).
 ## Current state
 
 v0.3 is done: the ledger can be trusted, and audited, by someone who does
-not trust whoever holds it. v0.4 is well under way: the ledger can be
-kept on disk (FW-401), every record carries the tick it was written at
-(FW-404), and a restarted plane picks up exactly where it left off by
-replaying its ledger (FW-402, FW-405). An `Intent` flows through `Admission`
+not trust whoever holds it. v0.4 is done too: the ledger can be kept on
+disk (FW-401), every record carries the tick it was written at (FW-404),
+and a restarted plane picks up exactly where it left off by replaying its
+ledger (FW-402, FW-405), which a property test checks over random floods
+and restarts (FW-403). An `Intent` flows through `Admission`
 (per-agent token bucket + bounded priority queue with backpressure) into
 the scheduler, which starts only what may run now: a `Global` change
 alone, `Region` changes one at a time with their resource to themselves,
@@ -42,15 +43,22 @@ left unfinished; any other bad line is refused and the file left alone.
 Still zero dependencies (SHA-256, SHA-512, Ed25519 and the JSON reader are
 from scratch) and pinned to Rust 1.95. 217 unit tests, 12 doctests
 (including the README examples), a randomized invariant test (300 seeded
-floods plus 6 signed ones, each ending in checkpoint audits), an edge-case
-export fixture that is also kept on disk, and 18 tamper tests of the
-independent verifier; fmt + clippy (`-D warnings`) clean.
+floods plus 6 signed ones, each ending in checkpoint audits), a replay
+property test (150 random floods plus 6 signed ones, with 300-odd
+restarts), an edge-case export fixture that is also kept on disk, and 18
+tamper tests of the independent verifier; fmt + clippy (`-D warnings`)
+clean.
 
 The floodwall.ai site (React + Vite in `site/`, built into `docs/` for
 GitHub Pages) describes the scheduler and hold queue.
 
 ## Recently shipped
 
+- **FW-403** - a property test that replaying the record stream reproduces
+  the live decisions: 150 random floods, each replayed whole and restarted
+  at random points (from exports, from files, after crashes that cut a
+  tick short), with every call's result and the final ledger unchanged,
+  and a changed decision refused at exactly its record.
 - **FW-402, FW-405** - `Floodwall::resume` rebuilds a plane from its ledger
   by replaying it, checking every record comes out the same: the queue,
   rate-limit buckets, in-flight work, conflict claims, held intents and
@@ -78,9 +86,9 @@ GitHub Pages) describes the scheduler and hold queue.
 
 ## Next up
 
-- **v0.4 persistence + replay** - FW-403: a property test that replaying
-  the record stream reproduces the live decisions, over random floods and
-  restarts.
+- **v0.5 policy as code** - FW-501 to FW-503: declarative rules evaluated
+  by the gate, a worked OPA-style example, and policy bundles versioned
+  and recorded in the ledger alongside verdicts.
 
 ## Known gaps
 
